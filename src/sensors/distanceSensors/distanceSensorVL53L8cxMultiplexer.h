@@ -39,22 +39,22 @@ public:
         _sensor.begin();
         status = _sensor.init();
         if (status) {
-            Serial.print("VL53L8CX initialization failed\r\n");
+            // Serial.print("VL53L8CX initialization failed\r\n");
             return false;
         }
         status = _sensor.set_resolution(VL53L8CX_RESOLUTION_8X8);
         if (status) {
-            Serial.print("VL53L8CX set resolution failed\r\n");
+            // Serial.print("VL53L8CX set resolution failed\r\n");
             return false;
         }
         status = _sensor.set_ranging_frequency_hz(15); // 15hz max for 8x8, 60hz max for 4x4
         if (status) {
-            Serial.print("VL53L8CX set ranging frequency failed\r\n");
+            // Serial.print("VL53L8CX set ranging frequency failed\r\n");
             return false;
         }
         status = _sensor.set_ranging_mode(VL53L8CX_RANGING_MODE_CONTINUOUS);
         if (status) {
-            Serial.print("VL53L8CX set ranging mode failed\r\n");
+            // Serial.print("VL53L8CX set ranging mode failed\r\n");
             return false;
         }
         _initialized = true;
@@ -76,13 +76,13 @@ public:
         uint8_t status;
         status = _sensor.check_data_ready(&NewDataReady);
         if (status) {
-            Serial.print("VL53L8CX check data ready failed\r\n");
+            // Serial.print("VL53L8CX check data ready failed\r\n");
             return false;
         }
         if (NewDataReady) {
             status = _sensor.get_ranging_data(&Results);
             if (status) {
-                Serial.print("VL53L8CX get ranging data failed\r\n");
+                // Serial.print("VL53L8CX get ranging data failed\r\n");
                 return false;
             } else {
                 _millisOfLastData = millis();
