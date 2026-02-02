@@ -1,6 +1,10 @@
 STM32duino VL53L8CX is from 
     https://github.com/stm32duino/VL53L8CX.git#c27106f5f4792c6a30cd10796216cbfcf1b1f1df
 
+ADS1115 library is from https://registry.platformio.org/libraries/wollewald/ADS1115_WE
+v1.5.5
+
+
 
 
 
