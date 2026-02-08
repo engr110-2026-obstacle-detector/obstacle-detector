@@ -5,6 +5,7 @@
 #include "lineSensors/lineSensorADS1115.h"
 
 #include "alarmSpeakers/alarmSpeakerPicoPio.h"
+#include "alarmSpeakers/hornController.h"
 
 #include <Arduino.h>
 
@@ -21,7 +22,8 @@ volatile DistanceData distanceData[frontSensorDataHeight][frontSensorDataWidth];
 const uint8_t lineSensor1Address = 0x49;
 LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 
-AlarmSpeakerPicoPio alarmSpeaker(14, 3200); // uses pin 14 and 15
+AlarmSpeakerPicoPio alarmSpeaker(14); // uses pin 14 and 15
+HornController horn(alarmSpeaker);
 
 volatile bool setupDone = false;
 
@@ -41,28 +43,34 @@ void setup1()
 {
     Wire.begin();
 
-    alarmSpeaker.begin();
+    horn.begin(); // also calls begin() on the alarm speaker
 
-    lineSensorBack.begin();
+    // lineSensorBack.begin();
     // lineSensorFront.begin();
+
     // longRangeTop.begin();
     // longRangeBottom.begin();
 
-    Wire1.begin();
-    sensorLeft.begin();
-    sensorCenter.begin();
-    sensorRight.begin();
+    // Wire1.begin();
+    // sensorLeft.begin();
+    // sensorCenter.begin();
+    // sensorRight.begin();
+
     setupDone = true;
 }
 void loop1()
-{
+{ // slow loop for sensors that are slow to poll
     sensorLeft.run();
     sensorCenter.run();
     sensorRight.run();
 }
 
 void loop()
-{
+{ // fast main loop
+    horn.run();
+
+    // horn.alarm(millis() < 30000);
+
     lineSensorBack.run();
     if (lineSensorBack.isMeasurementReady()) {
         int8_t linePos = lineSensorBack.getLinePosition();
