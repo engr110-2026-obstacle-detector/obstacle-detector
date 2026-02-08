@@ -105,13 +105,6 @@ public:
         _newData = false;
         // Calculate and return the line position
 
-        Serial.print("ADC readings: ");
-        for (uint8_t i = 0; i < _numAdcChannels; i++) {
-            Serial.print(_readings[i]);
-            Serial.print(" ");
-        }
-        Serial.println();
-
         return 0;
     }
 
@@ -119,6 +112,13 @@ public:
     {
         // Return true if a line is detected
         return false;
+    }
+
+    void getRawReadings(int16_t* readingsBuffer)
+    {
+        for (uint8_t i = 0; i < _numAdcChannels; i++) {
+            readingsBuffer[i] = _readings[i];
+        }
     }
 };
 

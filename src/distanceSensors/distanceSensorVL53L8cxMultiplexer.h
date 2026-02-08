@@ -14,8 +14,9 @@ protected:
     VL53L8CX _sensor;
     bool _initialized = false;
     VL53L8CX_ResultsData Results;
-    bool _newDataAvailable = false;
+    volatile bool _newDataAvailable = false;
     uint32_t _millisOfLastData = 0;
+    volatile bool _copying = false;
 
 public:
     DistanceSensorVL53L8cxMultiplexer(TwoWire& i2cBus, uint8_t muxAddress, uint8_t muxChannel)
@@ -80,7 +81,9 @@ public:
             return false;
         }
         if (NewDataReady) {
+            _copying = true;
             status = _sensor.get_ranging_data(&Results);
+            _copying = false;
             if (status) {
                 // Serial.print("VL53L8CX get ranging data failed\r\n");
                 return false;
@@ -118,6 +121,9 @@ public:
         if (!_newDataAvailable) {
             return false;
         }
+        if (_copying) {
+            return false;
+        }
         _newDataAvailable = false;
         for (int row = 0; row < _height; row++) {
             for (int col = 0; col < _width; col++) {
@@ -131,6 +137,10 @@ public:
             }
         }
         return true;
+    }
+    bool isInitialized()
+    {
+        return _initialized;
     }
 };
 #endif // DISTANCE_SENSOR_VL53L8CX_MULTIPLEXER_H
