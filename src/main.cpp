@@ -7,6 +7,8 @@
 #include "alarmSpeakers/alarmSpeakerPicoPio.h"
 #include "alarmSpeakers/hornController.h"
 
+#include "audioBoards/audioBoardDy1703aSoftserial.h"
+
 #include <Arduino.h>
 
 #include <Wifi.h>
@@ -25,13 +27,14 @@ LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 AlarmSpeakerPicoPio alarmSpeaker(14); // uses pin 14 and 15
 HornController horn(alarmSpeaker);
 
+AudioBoardDY1703aSoftSerial audioBoard(12, 13); // rx pin, tx pin
+
 volatile bool setupDone = false;
 
 void setup()
 {
     Serial.begin(500000);
-    // leftAudio.begin();
-    // rightAudio.begin();
+    audioBoard.begin();
 
     while (!setupDone) {
         delay(100);
@@ -68,29 +71,30 @@ void loop1()
 void loop()
 { // fast main loop
     horn.run();
+    audioBoard.run();
 
     // horn.alarm(millis() < 30000);
 
-    lineSensorBack.run();
-    if (lineSensorBack.isMeasurementReady()) {
-        int8_t linePos = lineSensorBack.getLinePosition();
-    }
+    // lineSensorBack.run();
+    // if (lineSensorBack.isMeasurementReady()) {
+    //     int8_t linePos = lineSensorBack.getLinePosition();
+    // }
 
-    bool anythingNew = false;
+    bool anythingNewFromFrontSensors = false;
     if (sensorLeft.isMeasurementReady()) {
-        anythingNew = true;
+        anythingNewFromFrontSensors = true;
         sensorLeft.getDistanceData((DistanceData*)distanceData, 0, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
     if (sensorCenter.isMeasurementReady()) {
-        anythingNew = true;
+        anythingNewFromFrontSensors = true;
         sensorCenter.getDistanceData((DistanceData*)distanceData, 8, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
     if (sensorRight.isMeasurementReady()) {
-        anythingNew = true;
+        anythingNewFromFrontSensors = true;
         sensorRight.getDistanceData((DistanceData*)distanceData, 16, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
 
-    if (anythingNew) {
+    if (anythingNewFromFrontSensors) {
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
                 if (distanceData[row][col].isValid) {
