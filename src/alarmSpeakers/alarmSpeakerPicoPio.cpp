@@ -68,7 +68,7 @@ void AlarmSpeakerPicoPio::begin(){
 void AlarmSpeakerPicoPio::playFrequency(uint32_t freq) {
   uint32_t period=0;
   if(freq!=0){
-    period=F_CPU/freq;
+    period=F_CPU/freq/2;
   } // else if freq is 0, period stays 0 which will stop the sound
   pio_sm_put(pio, sm, period);
 }
