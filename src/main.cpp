@@ -39,9 +39,9 @@ void setup()
     delay(10);
     Serial.begin(500000);
     Serial.println("Serial starting...");
+    delay(500); // give power to audio board time to stabilize
     audioBoard.begin();
     horn.begin(); // also calls begin() on the alarm speaker
-    delay(250);
     audioBoard.playTrack(TRACK_POWER_UP);
     initialsetup0Done = true;
     Serial.println("Serial initialized");
@@ -127,7 +127,7 @@ void loop()
 
     if (anythingNewFromFrontSensors) {
 
-        if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 500) {
+        if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 100) {
             if (!detectedObjectInFront) {
                 detectedObjectInFront = true;
                 audioBoard.playTrack(TRACK_OBJECT_FRONT);
