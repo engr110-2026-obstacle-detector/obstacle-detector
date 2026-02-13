@@ -11,9 +11,16 @@
 
 #include "audioBoards/audioTracks.h"
 
+#include "orientationSensors/orientationData.h"
+#include "orientationSensors/orientationSensor.h"
+#include "orientationSensors/orientationSensorICM20948.h"
+#include "orientationSensors/orientationSensorMpu6050.h"
+
 #include <Arduino.h>
 
 #include <Wifi.h>
+
+OrientationSensorICM20948 centralOrientationSensor(SPI, 17);
 
 const uint8_t frontSensorMuxAddress = 0x70;
 const uint8_t frontSensorDataWidth = 3 * 8;
@@ -31,8 +38,8 @@ HornController horn(alarmSpeaker);
 
 AudioBoardDY1703aSoftSerial audioBoard(12, 13); // rx pin, tx pin
 
+volatile bool setup1Done = false;
 volatile bool setupDone = false;
-volatile bool initialsetup0Done = false;
 
 void setup()
 {
@@ -40,13 +47,21 @@ void setup()
     Serial.begin(500000);
     Serial.println("Serial starting...");
     delay(500); // give power to audio board time to stabilize
+
+    SPI.begin(true);
+    centralOrientationSensor.begin();
+
     audioBoard.begin();
     horn.begin(); // also calls begin() on the alarm speaker
     audioBoard.playTrack(TRACK_POWER_UP);
-    initialsetup0Done = true;
+    setupDone = true;
     Serial.println("Serial initialized");
 
-    while (!setupDone) {
+    while (!setup1Done) {
+        if (millis() > 100000) {
+            audioBoard.playTrack(TRACK_ERROR_GENERIC);
+            break;
+        }
         delay(10);
     }
     Serial.println("Setup done");
@@ -56,8 +71,7 @@ void setup()
 // vl53l8cx sensors provide lots of data but take significant amounts of time to transmit it over I2C so I'll use the second processor of the pico to read the sensors
 void setup1()
 {
-
-    while (!initialsetup0Done) {
+    while (!setupDone) {
         delay(10);
     }
 
@@ -80,7 +94,7 @@ void setup1()
     // longRangeTop.begin();
     // longRangeBottom.begin();
 
-    setupDone = true;
+    setup1Done = true;
 }
 
 void loop1()
@@ -99,6 +113,25 @@ void loop()
 
     horn.run();
     audioBoard.run();
+    centralOrientationSensor.run();
+
+    if (centralOrientationSensor.isMeasurementReady()) {
+        OrientationData orientationData;
+        centralOrientationSensor.getOrientationData(orientationData);
+        Serial.print("Orientation sensor data: Ax ");
+        Serial.print(orientationData.Ax);
+        Serial.print(" Ay ");
+        Serial.print(orientationData.Ay);
+        Serial.print(" Az ");
+        Serial.print(orientationData.Az);
+        Serial.print(" Gx ");
+        Serial.print(orientationData.Gx);
+        Serial.print(" Gy ");
+        Serial.print(orientationData.Gy);
+        Serial.print(" Gz ");
+        Serial.print(orientationData.Gz);
+        Serial.println();
+    }
 
     // Serial.println("Running main loop");
 
