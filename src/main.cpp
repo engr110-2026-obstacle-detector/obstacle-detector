@@ -48,7 +48,7 @@ void setup()
     Serial.println("Serial starting...");
     delay(500); // give power to audio board time to stabilize
 
-    SPI.begin(true);
+    SPI.begin();
     centralOrientationSensor.begin();
 
     audioBoard.begin();
