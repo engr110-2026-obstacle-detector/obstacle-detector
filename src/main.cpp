@@ -43,7 +43,7 @@ volatile bool setupDone = false;
 
 void setup()
 {
-    delay(10);
+    delay(15);
     Serial.begin(500000);
     Serial.println("Serial starting...");
     delay(500); // give power to audio board time to stabilize
