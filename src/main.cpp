@@ -21,6 +21,7 @@
 #include <Wifi.h>
 
 OrientationSensorICM20948 centralOrientationSensor(SPI, 17);
+OrientationData centralOrientationData;
 
 const uint8_t frontSensorMuxAddress = 0x70;
 const uint8_t frontSensorDataWidth = 3 * 8;
@@ -33,7 +34,7 @@ volatile DistanceData distanceData[frontSensorDataHeight][frontSensorDataWidth];
 const uint8_t lineSensor1Address = 0x49;
 LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 
-AlarmSpeakerPicoPio alarmSpeaker(14); // uses pin 14 and 15
+AlarmSpeakerPicoPio alarmSpeaker(14, 300); // uses pins 14 and 15
 HornController horn(alarmSpeaker);
 
 AudioBoardDY1703aSoftSerial audioBoard(12, 13); // rx pin, tx pin
@@ -41,8 +42,13 @@ AudioBoardDY1703aSoftSerial audioBoard(12, 13); // rx pin, tx pin
 volatile bool setup1Done = false;
 volatile bool setupDone = false;
 
+uint8_t onPin = 20;
+
 void setup()
 {
+    pinMode(onPin, OUTPUT);
+    digitalWrite(onPin, HIGH); // stay on
+
     delay(15);
     Serial.begin(500000);
     Serial.println("Serial starting...");
@@ -58,7 +64,8 @@ void setup()
     Serial.println("Serial initialized");
 
     while (!setup1Done) {
-        if (millis() > 100000) {
+        if (millis() > 1000) {
+            Serial.println("Setup1 taking a long time...");
             audioBoard.playTrack(TRACK_ERROR_GENERIC);
             break;
         }
@@ -77,15 +84,15 @@ void setup1()
 
     pinMode(4, OUTPUT_12MA);
     pinMode(5, OUTPUT_12MA);
-    Wire.begin();
-    Wire.setTimeout(25, false);
-    Serial.println("I2C bus initialized");
-    sensorLeft.begin();
-    Serial.println("Left sensor initialized");
-    sensorCenter.begin();
-    Serial.println("Center sensor initialized");
-    sensorRight.begin();
-    Serial.println("Right sensor initialized");
+    // Wire.begin();
+    // Wire.setTimeout(25, false);
+    // Serial.println("I2C bus initialized");
+    // sensorLeft.begin();
+    // Serial.println("Left sensor initialized");
+    // sensorCenter.begin();
+    // Serial.println("Center sensor initialized");
+    // sensorRight.begin();
+    // Serial.println("Right sensor initialized");
 
     // Wire1.begin();
     // lineSensorBack.begin();
@@ -99,7 +106,6 @@ void setup1()
 
 void loop1()
 { // slow loop for sensors that are slow to poll
-    Serial.println(millis());
     sensorLeft.run();
     delay(10);
     sensorCenter.run();
@@ -110,32 +116,36 @@ void loop1()
 
 void loop()
 { // fast main loop
-
     horn.run();
     audioBoard.run();
     centralOrientationSensor.run();
 
     if (centralOrientationSensor.isMeasurementReady()) {
-        OrientationData orientationData;
-        centralOrientationSensor.getOrientationData(orientationData);
+        centralOrientationSensor.getOrientationData(centralOrientationData);
         Serial.print("Orientation sensor data: Ax ");
-        Serial.print(orientationData.Ax);
+        Serial.print(centralOrientationData.Ax);
         Serial.print(" Ay ");
-        Serial.print(orientationData.Ay);
+        Serial.print(centralOrientationData.Ay);
         Serial.print(" Az ");
-        Serial.print(orientationData.Az);
+        Serial.print(centralOrientationData.Az);
         Serial.print(" Gx ");
-        Serial.print(orientationData.Gx);
+        Serial.print(centralOrientationData.Gx);
         Serial.print(" Gy ");
-        Serial.print(orientationData.Gy);
+        Serial.print(centralOrientationData.Gy);
         Serial.print(" Gz ");
-        Serial.print(orientationData.Gz);
+        Serial.print(centralOrientationData.Gz);
         Serial.println();
+    }
+    horn.alarm(centralOrientationData.Ay > 0);
+
+    if (millis() > 50000) {
+        digitalWrite(onPin, LOW); // turn off
+        delay(1000); // should lose power before this line completes
+        digitalWrite(onPin, LOW);
+        audioBoard.playTrack(TRACK_ERROR_GENERIC); // error, unable to power off, contact support
     }
 
     // Serial.println("Running main loop");
-
-    // horn.alarm(millis()%3000 < 300);
 
     // lineSensorBack.run();
     // if (lineSensorBack.isMeasurementReady()) {
@@ -159,7 +169,6 @@ void loop()
     static bool detectedObjectInFront = false;
 
     if (anythingNewFromFrontSensors) {
-
         if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 100) {
             if (!detectedObjectInFront) {
                 detectedObjectInFront = true;

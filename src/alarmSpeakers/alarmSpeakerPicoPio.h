@@ -10,6 +10,7 @@ protected:
     PIO pio;
     uint sm;
     uint32_t _pin1;
+    uint32_t lastPeriod;
 
 public:
     /**
@@ -21,6 +22,7 @@ public:
     {
         _loudestFrequency = loudestFrequency;
         _pin1 = pin;
+        lastPeriod = 0;
     }
     void playLoudestFrequency()
     {
