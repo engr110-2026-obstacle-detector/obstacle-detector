@@ -70,7 +70,6 @@ public:
         delay(5000); // and some additional time
         // TODO: play track that says to contact support or unplug battery
         while (true) {
-            Serial.println(_powerButtonPressStartTime);
             Serial.println("trying to turn off...");
             digitalWrite(_onLatchPin, LOW);
             delay(100);

@@ -22,6 +22,9 @@
 
 #include <Wifi.h>
 
+// CONSTANTS
+const uint32_t startup1Timeout = 100000;
+
 // PINS
 // power
 const uint8_t onLatchPin = 20;
@@ -30,7 +33,8 @@ const uint8_t batMonPin = 28;
 const uint8_t powerButtonPin = 11;
 
 // control panel
-const uint8_t hornAndLinePin = 26;
+const uint8_t hornPin = 7;
+const uint8_t linePin = 6;
 
 // frontSensors
 const uint8_t frontSensorSDA = 2;
@@ -71,8 +75,8 @@ HornController horn(alarmSpeaker);
 
 AudioBoardDY1703aSoftSerial audioBoard(audioBoardRxPin, audioBoardTxPin); // rx pin, tx pin
 
-float voltsPerADCUnit = 4.3 / 4096;
-float lowBatteryThreshold = 0.1; // 3.5;
+float voltsPerADCUnit = 0.00512;
+float lowBatteryThreshold = 3.8;
 void powerOffCallback()
 {
     // called after attempting to cut power, in case cutting power fails, to try to stop everything else as much as possible while waiting for power to actually cut
@@ -94,6 +98,8 @@ void setup()
     SPI.begin();
     centralOrientationSensor.begin();
 
+    pinMode(hornPin, INPUT_PULLUP);
+    pinMode(linePin, INPUT_PULLUP);
     audioBoard.begin();
     horn.begin(); // also calls begin() on the alarm speaker
     audioBoard.playTrack(TRACK_POWER_UP);
@@ -102,7 +108,7 @@ void setup()
     Serial.println("Serial initialized");
 
     while (!setup1Done) {
-        if (millis() > 1000) { // TODO: increase, and make it a constant
+        if (millis() > startup1Timeout) {
             Serial.println("Setup1 taking a long time...");
             audioBoard.playTrack(TRACK_ERROR_GENERIC);
             break;
@@ -165,6 +171,8 @@ void loop()
     horn.run();
     audioBoard.run();
     centralOrientationSensor.run();
+
+    horn.beep(digitalRead(hornPin) == LOW);
 
     if (centralOrientationSensor.isMeasurementReady()) {
         centralOrientationSensor.getOrientationData(centralOrientationData);

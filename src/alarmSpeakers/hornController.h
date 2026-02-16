@@ -52,6 +52,11 @@ public:
         if (alarming) {
             return;
         }
+        if (hornButton) {
+            alarmSpeaker.playFrequency(200);
+        } else {
+            alarmSpeaker.stop();
+        }
     }
     void alarm(bool alarmOn)
     {
