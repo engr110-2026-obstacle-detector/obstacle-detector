@@ -16,43 +16,80 @@
 #include "orientationSensors/orientationSensorICM20948.h"
 #include "orientationSensors/orientationSensorMpu6050.h"
 
+#include "power.h"
+
 #include <Arduino.h>
 
 #include <Wifi.h>
 
-OrientationSensorICM20948 centralOrientationSensor(SPI, 17);
+// PINS
+// power
+const uint8_t onLatchPin = 20;
+const uint8_t chargeDetectPin = 21;
+const uint8_t batMonPin = 28;
+const uint8_t powerButtonPin = 11;
+
+// control panel
+const uint8_t hornAndLinePin = 26;
+
+// frontSensors
+const uint8_t frontSensorSDA = 2;
+const uint8_t frontSensorSCL = 3;
+TwoWire& frontSensorI2CBus = Wire1;
+const uint8_t frontSensorMuxAddress = 0x70;
+const uint8_t frontSensorIMUAddress = 0x68;
+
+// central orientation sensor
+SPIClass& centralOrientationSensorSPI = SPI;
+const uint8_t centralOrientationSensorCSPin = 17;
+
+// alarm speaker
+const uint8_t alarmSpeakerPin = 14; // also uses alarmSpeakerPin+1
+const uint32_t alarmSpeakerLoudestFrequency = 320; // Hz, 3200 is the true loudest but it hurts my ears
+
+// audio board
+const uint8_t audioBoardRxPin = 12;
+const uint8_t audioBoardTxPin = 13;
+
+// END OF PINS SECTION
+
+OrientationSensorICM20948 centralOrientationSensor(centralOrientationSensorSPI, centralOrientationSensorCSPin);
 OrientationData centralOrientationData;
 
-const uint8_t frontSensorMuxAddress = 0x70;
 const uint8_t frontSensorDataWidth = 3 * 8;
 const uint8_t frontSensorDataHeight = 8; // 8 rows
-DistanceSensorVL53L8cxMultiplexer sensorLeft(Wire, frontSensorMuxAddress, 1);
-DistanceSensorVL53L8cxMultiplexer sensorCenter(Wire, frontSensorMuxAddress, 2);
-DistanceSensorVL53L8cxMultiplexer sensorRight(Wire, frontSensorMuxAddress, 3);
+DistanceSensorVL53L8cxMultiplexer sensorLeft(frontSensorI2CBus, frontSensorMuxAddress, 1); // left is mux channel 1
+DistanceSensorVL53L8cxMultiplexer sensorCenter(frontSensorI2CBus, frontSensorMuxAddress, 2); // center is mux channel 2
+DistanceSensorVL53L8cxMultiplexer sensorRight(frontSensorI2CBus, frontSensorMuxAddress, 3); // right is mux channel 3
 volatile DistanceData distanceData[frontSensorDataHeight][frontSensorDataWidth]; // 8 rows (height) x 24 cols (3 sensors of 8 cols each)
 
-const uint8_t lineSensor1Address = 0x49;
-LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
+// const uint8_t lineSensor1Address = 0x49;
+// LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 
-AlarmSpeakerPicoPio alarmSpeaker(14, 300); // uses pins 14 and 15
+AlarmSpeakerPicoPio alarmSpeaker(alarmSpeakerPin, alarmSpeakerLoudestFrequency);
 HornController horn(alarmSpeaker);
 
-AudioBoardDY1703aSoftSerial audioBoard(12, 13); // rx pin, tx pin
+AudioBoardDY1703aSoftSerial audioBoard(audioBoardRxPin, audioBoardTxPin); // rx pin, tx pin
+
+float voltsPerADCUnit = 4.3 / 4096;
+float lowBatteryThreshold = 0.1; // 3.5;
+void powerOffCallback()
+{
+    // called after attempting to cut power, in case cutting power fails, to try to stop everything else as much as possible while waiting for power to actually cut
+    alarmSpeaker.stop();
+}
+PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetectPin, batMonPin, powerButtonPin, 1, voltsPerADCUnit, lowBatteryThreshold);
 
 volatile bool setup1Done = false;
 volatile bool setupDone = false;
 
-uint8_t onPin = 20;
-
 void setup()
 {
-    pinMode(onPin, OUTPUT);
-    digitalWrite(onPin, HIGH); // stay on
-
+    powerControl.start();
     delay(15);
     Serial.begin(500000);
     Serial.println("Serial starting...");
-    delay(500); // give power to audio board time to stabilize
+    delay(670); // give power time to stabilize before starting other things
 
     SPI.begin();
     centralOrientationSensor.begin();
@@ -60,15 +97,18 @@ void setup()
     audioBoard.begin();
     horn.begin(); // also calls begin() on the alarm speaker
     audioBoard.playTrack(TRACK_POWER_UP);
+    // delay(TRACK_POWER_UP_TIME);
     setupDone = true;
     Serial.println("Serial initialized");
 
     while (!setup1Done) {
-        if (millis() > 1000) {
+        if (millis() > 1000) { // TODO: increase, and make it a constant
             Serial.println("Setup1 taking a long time...");
             audioBoard.playTrack(TRACK_ERROR_GENERIC);
             break;
         }
+        powerControl.run();
+        audioBoard.run();
         delay(10);
     }
     Serial.println("Setup done");
@@ -82,10 +122,12 @@ void setup1()
         delay(10);
     }
 
-    pinMode(4, OUTPUT_12MA);
-    pinMode(5, OUTPUT_12MA);
-    // Wire.begin();
-    // Wire.setTimeout(25, false);
+    pinMode(frontSensorSDA, OUTPUT_12MA);
+    pinMode(frontSensorSCL, OUTPUT_12MA);
+    frontSensorI2CBus.setSDA(frontSensorSDA);
+    frontSensorI2CBus.setSCL(frontSensorSCL);
+    // frontSensorI2CBus.begin();
+    // frontSensorI2CBus.setTimeout(25, false);
     // Serial.println("I2C bus initialized");
     // sensorLeft.begin();
     // Serial.println("Left sensor initialized");
@@ -94,7 +136,10 @@ void setup1()
     // sensorRight.begin();
     // Serial.println("Right sensor initialized");
 
-    // Wire1.begin();
+    // Wire.setSDA(lineSensorSDA);
+    // Wire.setSCL(lineSensorSCL);
+    // Wire.begin();
+    // Wire.setTimeout(25, false);
     // lineSensorBack.begin();
     // lineSensorFront.begin();
 
@@ -116,6 +161,7 @@ void loop1()
 
 void loop()
 { // fast main loop
+    powerControl.run();
     horn.run();
     audioBoard.run();
     centralOrientationSensor.run();
@@ -137,13 +183,6 @@ void loop()
         Serial.println();
     }
     horn.alarm(centralOrientationData.Ay > 0);
-
-    if (millis() > 50000) {
-        digitalWrite(onPin, LOW); // turn off
-        delay(1000); // should lose power before this line completes
-        digitalWrite(onPin, LOW);
-        audioBoard.playTrack(TRACK_ERROR_GENERIC); // error, unable to power off, contact support
-    }
 
     // Serial.println("Running main loop");
 
