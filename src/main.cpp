@@ -24,6 +24,8 @@
 
 // CONSTANTS
 const uint32_t startup1Timeout = 45000; // milliseconds
+float lowBatteryThreshold = 3.5;
+
 
 // PINS
 // power
@@ -76,7 +78,6 @@ HornController horn(alarmSpeaker);
 AudioBoardDY1703aSoftSerial audioBoard(audioBoardRxPin, audioBoardTxPin); // rx pin, tx pin
 
 float voltsPerADCUnit = 0.00512;
-float lowBatteryThreshold = 3.8;
 void powerOffCallback()
 {
     // called after attempting to cut power, in case cutting power fails, to try to stop everything else as much as possible while waiting for power to actually cut
@@ -110,10 +111,12 @@ void setup()
     setupDone = true;
     Serial.println("Serial initialized");
 
+    bool error = false;
     while (!setup1Done) {
         if (millis() > startup1Timeout) {
             Serial.println("Setup1 taking a long time...");
             audioBoard.playTrack(TRACK_ERROR_GENERIC);
+            error = true;
             break;
         }
         powerControl.run();
@@ -121,8 +124,11 @@ void setup()
         hornRun();
         tiltDetect();
     }
+    alarmSpeaker.stop();
     Serial.println("Setup done");
-    audioBoard.playTrack(TRACK_POWERED_ON);
+    if (!error) {
+        audioBoard.playTrack(TRACK_POWERED_ON);
+    }
 }
 
 // vl53l8cx sensors provide lots of data but take significant amounts of time to transmit it over I2C so I'll use the second processor of the pico to read the sensors
