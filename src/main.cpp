@@ -23,7 +23,7 @@
 #include <Wifi.h>
 
 // CONSTANTS
-const uint32_t startup1Timeout = 100000;
+const uint32_t startup1Timeout = 45000; // milliseconds
 
 // PINS
 // power
@@ -49,11 +49,11 @@ const uint8_t centralOrientationSensorCSPin = 17;
 
 // alarm speaker
 const uint8_t alarmSpeakerPin = 14; // also uses alarmSpeakerPin+1
-const uint32_t alarmSpeakerLoudestFrequency = 320; // Hz, 3200 is the true loudest but it hurts my ears
+const uint32_t alarmSpeakerLoudestFrequency = 500; // Hz, 3200 is the true loudest but it hurts my ears
 
 // audio board
-const uint8_t audioBoardRxPin = 12;
-const uint8_t audioBoardTxPin = 13;
+const uint8_t audioBoardTxPin = 12;
+const uint8_t audioBoardRxPin = 13;
 
 // END OF PINS SECTION
 
@@ -87,20 +87,23 @@ PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetect
 volatile bool setup1Done = false;
 volatile bool setupDone = false;
 
+#include "misc.h"
+
 void setup()
 {
+    powerControl.on();
+    audioBoard.begin();
     powerControl.start();
     delay(15);
     Serial.begin(500000);
     Serial.println("Serial starting...");
-    delay(670); // give power time to stabilize before starting other things
 
     SPI.begin();
     centralOrientationSensor.begin();
 
     pinMode(hornPin, INPUT_PULLUP);
     pinMode(linePin, INPUT_PULLUP);
-    audioBoard.begin();
+
     horn.begin(); // also calls begin() on the alarm speaker
     audioBoard.playTrack(TRACK_POWER_UP);
     // delay(TRACK_POWER_UP_TIME);
@@ -115,7 +118,8 @@ void setup()
         }
         powerControl.run();
         audioBoard.run();
-        delay(10);
+        hornRun();
+        tiltDetect();
     }
     Serial.println("Setup done");
     audioBoard.playTrack(TRACK_POWERED_ON);
@@ -132,15 +136,15 @@ void setup1()
     pinMode(frontSensorSCL, OUTPUT_12MA);
     frontSensorI2CBus.setSDA(frontSensorSDA);
     frontSensorI2CBus.setSCL(frontSensorSCL);
-    // frontSensorI2CBus.begin();
-    // frontSensorI2CBus.setTimeout(25, false);
-    // Serial.println("I2C bus initialized");
-    // sensorLeft.begin();
-    // Serial.println("Left sensor initialized");
-    // sensorCenter.begin();
-    // Serial.println("Center sensor initialized");
-    // sensorRight.begin();
-    // Serial.println("Right sensor initialized");
+    frontSensorI2CBus.begin();
+    frontSensorI2CBus.setTimeout(25, false);
+    Serial.println("I2C bus initialized");
+    sensorLeft.begin();
+    Serial.println("Left sensor initialized");
+    sensorCenter.begin();
+    Serial.println("Center sensor initialized");
+    sensorRight.begin();
+    Serial.println("Right sensor initialized");
 
     // Wire.setSDA(lineSensorSDA);
     // Wire.setSCL(lineSensorSCL);
@@ -170,33 +174,19 @@ void loop()
     powerControl.run();
     horn.run();
     audioBoard.run();
-    centralOrientationSensor.run();
+    hornRun();
 
-    horn.beep(digitalRead(hornPin) == LOW);
-
-    if (centralOrientationSensor.isMeasurementReady()) {
-        centralOrientationSensor.getOrientationData(centralOrientationData);
-        Serial.print("Orientation sensor data: Ax ");
-        Serial.print(centralOrientationData.Ax);
-        Serial.print(" Ay ");
-        Serial.print(centralOrientationData.Ay);
-        Serial.print(" Az ");
-        Serial.print(centralOrientationData.Az);
-        Serial.print(" Gx ");
-        Serial.print(centralOrientationData.Gx);
-        Serial.print(" Gy ");
-        Serial.print(centralOrientationData.Gy);
-        Serial.print(" Gz ");
-        Serial.print(centralOrientationData.Gz);
-        Serial.println();
-    }
-    horn.alarm(centralOrientationData.Ay > 0);
+    tiltDetect(); // calls centralOrientationSensor.run();
 
     // Serial.println("Running main loop");
 
     // lineSensorBack.run();
     // if (lineSensorBack.isMeasurementReady()) {
     //     int8_t linePos = lineSensorBack.getLinePosition();
+    // }
+    // lineSensorFront.run();
+    // if (lineSensorFront.isMeasurementReady()) {
+    //     int8_t linePos = lineSensorFront.getLinePosition();
     // }
 
     bool anythingNewFromFrontSensors = false;

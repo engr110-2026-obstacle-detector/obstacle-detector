@@ -30,6 +30,11 @@ public:
         _voltsPerADCUnit = voltsPerADCUnit;
         _lowBatteryThreshold = lowBatteryThreshold;
     }
+    void on()
+    {
+        pinMode(_onLatchPin, OUTPUT);
+        digitalWrite(_onLatchPin, HIGH);
+    }
     void start()
     {
         pinMode(_onLatchPin, OUTPUT);
