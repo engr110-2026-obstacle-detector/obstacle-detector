@@ -59,9 +59,6 @@ public:
         data.Gx = agmt.gyr.axes.x;
         data.Gy = agmt.gyr.axes.y;
         data.Gz = agmt.gyr.axes.z;
-        data.roll = NAN;
-        data.pitch = NAN;
-        data.yaw = NAN;
     }
 };
 

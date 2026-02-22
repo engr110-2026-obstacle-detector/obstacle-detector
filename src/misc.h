@@ -3,6 +3,7 @@
 void hornRun()
 {
     horn.beep(digitalRead(hornPin) == LOW);
+    horn.run();
 }
 
 void tiltDetect()

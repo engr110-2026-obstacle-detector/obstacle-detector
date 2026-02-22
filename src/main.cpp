@@ -26,7 +26,6 @@
 const uint32_t startup1Timeout = 45000; // milliseconds
 float lowBatteryThreshold = 3.5;
 
-
 // PINS
 // power
 const uint8_t onLatchPin = 20;
@@ -61,6 +60,9 @@ const uint8_t audioBoardRxPin = 13;
 
 OrientationSensorICM20948 centralOrientationSensor(centralOrientationSensorSPI, centralOrientationSensorCSPin);
 OrientationData centralOrientationData;
+
+OrientationSensorMpu6050 frontOrientationSensor(frontSensorIMUAddress, frontSensorI2CBus);
+OrientationData frontOrientationData;
 
 const uint8_t frontSensorDataWidth = 3 * 8;
 const uint8_t frontSensorDataHeight = 8; // 8 rows
@@ -145,10 +147,15 @@ void setup1()
     frontSensorI2CBus.begin();
     frontSensorI2CBus.setTimeout(25, false);
     Serial.println("I2C bus initialized");
+
     sensorLeft.begin();
     Serial.println("Left sensor initialized");
+
+    frontOrientationSensor.begin();
+
     sensorCenter.begin();
     Serial.println("Center sensor initialized");
+
     sensorRight.begin();
     Serial.println("Right sensor initialized");
 
@@ -168,11 +175,15 @@ void setup1()
 void loop1()
 { // slow loop for sensors that are slow to poll
     sensorLeft.run();
-    delay(10);
+    delay(5);
     sensorCenter.run();
-    delay(10);
+    delay(5);
     sensorRight.run();
-    delay(10);
+    delay(5);
+    // lineSensorFront.run();
+    frontOrientationSensor.run();
+    // lineSensorBack.run();
+    delay(5);
 }
 
 void loop()
@@ -186,11 +197,27 @@ void loop()
 
     // Serial.println("Running main loop");
 
-    // lineSensorBack.run();
+    if (frontOrientationSensor.isMeasurementReady()) {
+        frontOrientationSensor.getOrientationData(frontOrientationData);
+        Serial.println();
+        Serial.print(frontOrientationData.Ax);
+        Serial.print("\t");
+        Serial.print(frontOrientationData.Ay);
+        Serial.print("\t");
+        Serial.print(frontOrientationData.Az);
+        Serial.print("\t");
+        Serial.print(frontOrientationData.Gx);
+        Serial.print("\t");
+        Serial.print(frontOrientationData.Gy);
+        Serial.print("\t");
+        Serial.print(frontOrientationData.Gz);
+        Serial.println();
+        Serial.println();
+    }
+
     // if (lineSensorBack.isMeasurementReady()) {
     //     int8_t linePos = lineSensorBack.getLinePosition();
     // }
-    // lineSensorFront.run();
     // if (lineSensorFront.isMeasurementReady()) {
     //     int8_t linePos = lineSensorFront.getLinePosition();
     // }

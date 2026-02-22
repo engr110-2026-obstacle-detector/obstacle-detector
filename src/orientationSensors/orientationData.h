@@ -10,8 +10,5 @@ typedef struct {
     float Gx;
     float Gy;
     float Gz;
-    float roll;
-    float pitch;
-    float yaw;
 } OrientationData;
 #endif // ORIENTATION_DATA_H
