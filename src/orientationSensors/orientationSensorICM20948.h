@@ -53,12 +53,12 @@ public:
     }
     void getOrientationData(OrientationData& data)
     {
-        data.Ax = agmt.acc.axes.x;
-        data.Ay = agmt.acc.axes.y;
-        data.Az = agmt.acc.axes.z;
-        data.Gx = agmt.gyr.axes.x;
-        data.Gy = agmt.gyr.axes.y;
-        data.Gz = agmt.gyr.axes.z;
+        data.Ax = _icm.getAccMG(agmt.acc.axes.x) / 1000.0;
+        data.Ay = _icm.getAccMG(agmt.acc.axes.y) / 1000.0;
+        data.Az = _icm.getAccMG(agmt.acc.axes.z) / 1000.0;
+        data.Gx = _icm.getGyrDPS(agmt.gyr.axes.x);
+        data.Gy = _icm.getGyrDPS(agmt.gyr.axes.y);
+        data.Gz = _icm.getGyrDPS(agmt.gyr.axes.z);
     }
 };
 

@@ -50,7 +50,8 @@ const uint8_t centralOrientationSensorCSPin = 17;
 
 // alarm speaker
 const uint8_t alarmSpeakerPin = 14; // also uses alarmSpeakerPin+1
-const uint32_t alarmSpeakerLoudestFrequency = 500; // Hz, 3200 is the true loudest but it hurts my ears
+const uint32_t alarmSpeakerLoudestFrequency = 800; // Hz, 3200 is the true loudest but it hurts my ears
+const uint32_t alarmSpeakerHornFrequency = 220;
 
 // audio board
 const uint8_t audioBoardTxPin = 12;
@@ -63,6 +64,9 @@ OrientationData centralOrientationData;
 
 OrientationSensorMpu6050 frontOrientationSensor(frontSensorIMUAddress, frontSensorI2CBus);
 OrientationData frontOrientationData;
+#include "orientationSensors/complementaryOrientationFilter.h"
+ComplementaryOrientationFilter frontSensorPitchFilter(0.01, -135); // alpha, offset
+float frontSensorPitchAngle = 0;
 
 const uint8_t frontSensorDataWidth = 3 * 8;
 const uint8_t frontSensorDataHeight = 8; // 8 rows
@@ -75,7 +79,7 @@ volatile DistanceData distanceData[frontSensorDataHeight][frontSensorDataWidth];
 // LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 
 AlarmSpeakerPicoPio alarmSpeaker(alarmSpeakerPin, alarmSpeakerLoudestFrequency);
-HornController horn(alarmSpeaker);
+HornController horn(alarmSpeaker, alarmSpeakerHornFrequency);
 
 AudioBoardDY1703aSoftSerial audioBoard(audioBoardRxPin, audioBoardTxPin); // rx pin, tx pin
 
@@ -109,7 +113,7 @@ void setup()
 
     horn.begin(); // also calls begin() on the alarm speaker
     audioBoard.playTrack(TRACK_POWER_UP);
-    // delay(TRACK_POWER_UP_TIME);
+    delay(TRACK_POWER_UP_TIME);
     setupDone = true;
     Serial.println("Serial initialized");
 
@@ -147,17 +151,16 @@ void setup1()
     frontSensorI2CBus.begin();
     frontSensorI2CBus.setTimeout(25, false);
     Serial.println("I2C bus initialized");
-
-    sensorLeft.begin();
-    Serial.println("Left sensor initialized");
-
     frontOrientationSensor.begin();
 
-    sensorCenter.begin();
-    Serial.println("Center sensor initialized");
+    // sensorLeft.begin();
+    // Serial.println("Left sensor initialized");
 
-    sensorRight.begin();
-    Serial.println("Right sensor initialized");
+    // sensorCenter.begin();
+    // Serial.println("Center sensor initialized");
+
+    // sensorRight.begin();
+    // Serial.println("Right sensor initialized");
 
     // Wire.setSDA(lineSensorSDA);
     // Wire.setSCL(lineSensorSCL);
@@ -197,22 +200,41 @@ void loop()
 
     // Serial.println("Running main loop");
 
+    // if (frontOrientationSensor.isMeasurementReady()) {
+    //     frontOrientationSensor.getOrientationData(frontOrientationData);
+    //     Serial.println();
+    //     Serial.print(frontOrientationData.Ax);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Ay);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Az);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gx);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gy);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gz);
+    //     Serial.println();
+    //     Serial.println();
+    // }
+
+    static bool complainedAboutFrontPitchAngle = false;
     if (frontOrientationSensor.isMeasurementReady()) {
         frontOrientationSensor.getOrientationData(frontOrientationData);
-        Serial.println();
-        Serial.print(frontOrientationData.Ax);
-        Serial.print("\t");
-        Serial.print(frontOrientationData.Ay);
-        Serial.print("\t");
-        Serial.print(frontOrientationData.Az);
-        Serial.print("\t");
-        Serial.print(frontOrientationData.Gx);
-        Serial.print("\t");
-        Serial.print(frontOrientationData.Gy);
-        Serial.print("\t");
-        Serial.print(frontOrientationData.Gz);
-        Serial.println();
-        Serial.println();
+
+        frontSensorPitchAngle = frontSensorPitchFilter.update(frontOrientationData);
+
+        // Serial.println(frontSensorPitchAngle);
+
+        // TODO: compare to angle from central sensor
+        if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 25) {
+            complainedAboutFrontPitchAngle = true;
+            audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
+            Serial.println("front sensor not level");
+        }
+        if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
+            complainedAboutFrontPitchAngle = false;
+        }
     }
 
     // if (lineSensorBack.isMeasurementReady()) {
@@ -250,15 +272,15 @@ void loop()
             }
         }
 
-        for (int row = 0; row < frontSensorDataHeight; row++) {
-            for (int col = 0; col < frontSensorDataWidth; col++) {
-                if (distanceData[row][col].isValid) {
-                    Serial.print(distanceData[row][col].distanceMm);
-                }
-                Serial.print("\t");
-            }
-            Serial.println();
-        }
-        Serial.println();
+        // for (int row = 0; row < frontSensorDataHeight; row++) {
+        //     for (int col = 0; col < frontSensorDataWidth; col++) {
+        //         if (distanceData[row][col].isValid) {
+        //             Serial.print(distanceData[row][col].distanceMm);
+        //         }
+        //         Serial.print("\t");
+        //     }
+        //     Serial.println();
+        // }
+        // Serial.println();
     }
 }

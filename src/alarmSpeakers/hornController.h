@@ -7,11 +7,13 @@ protected:
     AlarmSpeaker& alarmSpeaker;
     bool alarming = false;
     uint32_t alarmStartMillis = 0;
+    uint32_t _hornFreq;
 
 public:
-    HornController(AlarmSpeaker& speaker)
+    HornController(AlarmSpeaker& speaker, uint32_t hornFreq)
         : alarmSpeaker(speaker)
     {
+        _hornFreq=hornFreq;
     }
     void begin()
     {
@@ -53,7 +55,7 @@ public:
             return;
         }
         if (hornButton) {
-            alarmSpeaker.playFrequency(200);
+            alarmSpeaker.playFrequency(_hornFreq); //TODO: MAKE VARIABLE
         } else {
             alarmSpeaker.stop();
         }

@@ -46,8 +46,8 @@ public:
         delay(500); // give power time to stabilize before measuring it
         if (digitalRead(_chargeDetectPin) == HIGH) {
             Serial.println("Charging detected on startup, powering off to charge...");
-            // _audioBoard.playTrack(TRACK_CHARGING); // TODO: add a charging track
-            // delay(TRACK_CHARGING_TIME); // TODO: better way to wait for track to finish
+            _audioBoard.playTrack(TRACK_CHARGING);
+            delay(TRACK_CHARGING_TIME);
             powerOff();
         }
         checkLowBattery();
@@ -64,16 +64,18 @@ public:
     void powerOff()
     {
         Serial.println("Powering off...");
-        // _audioBoard.playTrack(TRACK_POWER_OFF); //TODO: add a power off track
-        delay(2000); // delay(TRACK_POWER_OFF_TIME);
+        if (_powerOffCallback) {
+            _powerOffCallback();
+        }
+        _audioBoard.playTrack(TRACK_POWER_OFF);
+        delay(TRACK_POWER_OFF_TIME);
         digitalWrite(_onLatchPin, LOW);
         delay(100); // should lose power before this line completes
-        _powerOffCallback();
         Serial.println("If you see this message, power off failed");
-        _audioBoard.playTrack(TRACK_ERROR_GENERIC); // TODO: add a track that says let go of power button
-        // delay(TRACK_ERROR_GENERIC_TIME);
+        _audioBoard.playTrack(TRACK_ERROR_LET_GO_POWER);
+        delay(TRACK_ERROR_LET_GO_POWER_TIME);
         delay(5000); // and some additional time
-        // TODO: play track that says to contact support or unplug battery
+        _audioBoard.playTrack(TRACK_ERROR_GENERIC);
         while (true) {
             Serial.println("trying to turn off...");
             digitalWrite(_onLatchPin, LOW);
@@ -86,8 +88,8 @@ protected:
     {
         if (digitalRead(_chargeDetectPin) == HIGH) {
             Serial.println("Charging detected while running, powering off to charge...");
-            // _audioBoard.playTrack(TRACK_CHARGING); // TODO: add a charging track
-            // delay(TRACK_CHARGING_TIME); // TODO: better way to wait for track to finish
+            _audioBoard.playTrack(TRACK_CHARGING);
+            delay(TRACK_CHARGING_TIME);
             powerOff();
         }
     }
@@ -95,8 +97,8 @@ protected:
     {
         if (analogRead(_batMonPin) * _voltsPerADCUnit < _lowBatteryThreshold) {
             Serial.println("Low battery, powering off...");
-            // _audioBoard.playTrack(TRACK_LOW_BATTERY); // TODO: add a low battery track ("CurbScout battery low, please charge, powering off now.")
-            // delay(TRACK_LOW_BATTERY_TIME);
+            _audioBoard.playTrack(TRACK_LOW_BATTERY);
+            delay(TRACK_LOW_BATTERY_TIME);
             powerOff();
         }
     }
@@ -107,7 +109,7 @@ protected:
                 _powerButtonPreviouslyPressed = true;
                 _powerButtonPressStartTime = millis();
             } else { // _powerButtonPreviouslyPressed=true, button is being held
-                if (millis() - _powerButtonPressStartTime > 100 && _powerButtonPressStartTime != 0) { // TODO: make this a constant
+                if (millis() - _powerButtonPressStartTime > 50 && _powerButtonPressStartTime != 0) { // TODO: make time a constant
                     Serial.println("Power button held, powering off...");
                     powerOff();
                 }
