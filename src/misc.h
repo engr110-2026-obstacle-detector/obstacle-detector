@@ -14,9 +14,9 @@ void tiltDetect()
     centralOrientationSensor.run();
     if (centralOrientationSensor.isMeasurementReady()) {
         centralOrientationSensor.getOrientationData(centralOrientationData);
-        accelAvg = accelAvg * 0.999 + centralOrientationData.Az * 0.001;
+        accelAvg = accelAvg * 0.9999 + centralOrientationData.Az * 0.0001;
     }
-    if (tiltAlarmOn == false && accelAvg < 0.85) {
+    if (tiltAlarmOn == false && accelAvg < 0.8) { //TODO USE FILTER
         tiltAlarmOn = true;
         audioBoard.playTrack(TRACK_TILT);
         tiltAlarmStartTime = millis();

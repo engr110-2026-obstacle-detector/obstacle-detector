@@ -50,7 +50,7 @@ const uint8_t centralOrientationSensorCSPin = 17;
 
 // alarm speaker
 const uint8_t alarmSpeakerPin = 14; // also uses alarmSpeakerPin+1
-const uint32_t alarmSpeakerLoudestFrequency = 800; // Hz, 3200 is the true loudest but it hurts my ears
+const uint32_t alarmSpeakerLoudestFrequency = 2800; // Hz, 3200 is the true loudest but it hurts my ears
 const uint32_t alarmSpeakerHornFrequency = 220;
 
 // audio board
@@ -86,7 +86,6 @@ AudioBoardDY1703aSoftSerial audioBoard(audioBoardRxPin, audioBoardTxPin); // rx 
 float voltsPerADCUnit = 0.00512;
 void powerOffCallback()
 {
-    // called after attempting to cut power, in case cutting power fails, to try to stop everything else as much as possible while waiting for power to actually cut
     alarmSpeaker.stop();
 }
 PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetectPin, batMonPin, powerButtonPin, 1, voltsPerADCUnit, lowBatteryThreshold);
@@ -150,16 +149,16 @@ void setup1()
     frontSensorI2CBus.setSCL(frontSensorSCL);
     frontSensorI2CBus.begin();
     frontSensorI2CBus.setTimeout(25, false);
-    Serial.println("I2C bus initialized");
+    // Serial.println("I2C bus initialized");
     frontOrientationSensor.begin();
 
-    // sensorLeft.begin();
+    sensorLeft.begin();
     // Serial.println("Left sensor initialized");
 
-    // sensorCenter.begin();
+    sensorCenter.begin();
     // Serial.println("Center sensor initialized");
 
-    // sensorRight.begin();
+    sensorRight.begin();
     // Serial.println("Right sensor initialized");
 
     // Wire.setSDA(lineSensorSDA);
@@ -183,8 +182,9 @@ void loop1()
     delay(5);
     sensorRight.run();
     delay(5);
-    // lineSensorFront.run();
     frontOrientationSensor.run();
+
+    // lineSensorFront.run();
     // lineSensorBack.run();
     delay(5);
 }
@@ -200,24 +200,6 @@ void loop()
 
     // Serial.println("Running main loop");
 
-    // if (frontOrientationSensor.isMeasurementReady()) {
-    //     frontOrientationSensor.getOrientationData(frontOrientationData);
-    //     Serial.println();
-    //     Serial.print(frontOrientationData.Ax);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Ay);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Az);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gx);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gy);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gz);
-    //     Serial.println();
-    //     Serial.println();
-    // }
-
     static bool complainedAboutFrontPitchAngle = false;
     if (frontOrientationSensor.isMeasurementReady()) {
         frontOrientationSensor.getOrientationData(frontOrientationData);
@@ -227,14 +209,14 @@ void loop()
         // Serial.println(frontSensorPitchAngle);
 
         // TODO: compare to angle from central sensor
-        if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 25) {
-            complainedAboutFrontPitchAngle = true;
-            audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
-            Serial.println("front sensor not level");
-        }
-        if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
-            complainedAboutFrontPitchAngle = false;
-        }
+        // if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 45) {
+        //     complainedAboutFrontPitchAngle = true;
+        //     audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
+        //     Serial.println("front sensor not level");
+        // }
+        // if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
+        //     complainedAboutFrontPitchAngle = false;
+        // }
     }
 
     // if (lineSensorBack.isMeasurementReady()) {
@@ -258,29 +240,159 @@ void loop()
         sensorRight.getDistanceData((DistanceData*)distanceData, 16, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
 
-    static bool detectedObjectInFront = false;
+    static int32_t frontSensorInitialization = 10;
+    static int32_t frontSensorZeros[frontSensorDataHeight][frontSensorDataWidth] = { 0 }; // distances measured from flat floor at startup
+    static int32_t frontSensorZerosCounts[frontSensorDataHeight][frontSensorDataWidth] = { 0 }; // number of measurements taken for each cell of frontSensorZeros, used to calculate average
 
-    if (anythingNewFromFrontSensors) {
-        if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 100) {
-            if (!detectedObjectInFront) {
-                detectedObjectInFront = true;
-                audioBoard.playTrack(TRACK_OBJECT_FRONT);
-            }
-        } else {
-            if (detectedObjectInFront) {
-                detectedObjectInFront = false;
+    if (digitalRead(linePin) == LOW) { // for testing, re-zero when line button is pushed
+        frontSensorInitialization = 10;
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                frontSensorZeros[row][col] = 0;
+                frontSensorZerosCounts[row][col] = 0;
             }
         }
-
-        // for (int row = 0; row < frontSensorDataHeight; row++) {
-        //     for (int col = 0; col < frontSensorDataWidth; col++) {
-        //         if (distanceData[row][col].isValid) {
-        //             Serial.print(distanceData[row][col].distanceMm);
-        //         }
-        //         Serial.print("\t");
-        //     }
-        //     Serial.println();
-        // }
-        // Serial.println();
     }
+
+    if (anythingNewFromFrontSensors) {
+        if (frontSensorInitialization > 0) {
+            frontSensorInitialization--;
+
+            for (int row = 0; row < frontSensorDataHeight; row++) {
+                for (int col = 0; col < frontSensorDataWidth; col++) {
+                    if (distanceData[row][col].isValid) {
+                        frontSensorZerosCounts[row][col]++;
+                        frontSensorZeros[row][col] += distanceData[row][col].distanceMm;
+                    }
+                }
+            }
+
+            if (frontSensorInitialization == 0) {
+                for (int row = 0; row < frontSensorDataHeight; row++) {
+                    for (int col = 0; col < frontSensorDataWidth; col++) {
+                        frontSensorZeros[row][col] /= frontSensorZerosCounts[row][col];
+                    }
+                }
+
+                Serial.println("Front sensors initialized with zero values of:");
+                for (int row = 0; row < frontSensorDataHeight; row++) {
+                    for (int col = 0; col < frontSensorDataWidth; col++) {
+                        Serial.print(frontSensorZeros[row][col]);
+                        Serial.print("\t");
+                    }
+                    Serial.println();
+                }
+                Serial.println();
+                delay(1000);
+            }
+        } else {
+            const int LEFT = 0;
+            const int CENTER = 1;
+            const int RIGHT = 2;
+            const int DROP = 0;
+            const int OBJECT = 1;
+            int detectionCounts[2][3] = { 0 }; // [object/drop][left/center/right]
+            int32_t objectThresholdPerThousand = -75;
+            int32_t dropThresholdPerThousand = 75;
+            for (int row = 0; row < frontSensorDataHeight; row++) {
+                for (int col = 0; col < frontSensorDataWidth; col++) {
+                    if (distanceData[row][col].isValid && frontSensorZeros[row][col] != 0) {
+                        int32_t adjustedDistance = distanceData[row][col].distanceMm - frontSensorZeros[row][col];
+                        // Serial.print(adjustedDistance * 1000 / frontSensorZeros[row][col]);
+                        if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
+                            detectionCounts[OBJECT][col / 8]++;
+                            // Serial.print("o ");
+                        } else if (adjustedDistance > frontSensorZeros[row][col] * dropThresholdPerThousand / 1000) {
+                            detectionCounts[DROP][col / 8]++;
+                            // Serial.print("d ");
+                        }
+                    } else {
+                        // Serial.print("x ");
+                    }
+                    // Serial.print("\t");
+                }
+                // Serial.println();
+            }
+
+            Serial.print("objectPixels:\t");
+            for (int i = 0; i < 3; i++) {
+                Serial.print(detectionCounts[OBJECT][i]);
+                Serial.print("\t");
+            }
+            Serial.print("\t");
+            Serial.print("dropPixels:\t");
+            for (int i = 0; i < 3; i++) {
+                Serial.print(detectionCounts[DROP][i]);
+                Serial.print("\t");
+            }
+            Serial.println();
+
+            static bool alertedYet[2][3] = { false }; // [object/drop][left/center/right]
+            const int dropPixelDetectionThreshold = 8; // alert if above this
+            const int objectPixelDetectionThreshold = 8;
+            const int dropPixelDetectionThreshold_Low = 5; // reset if below this
+            const int objectPixelDetectionThreshold_Low = 5;
+
+            const int alertTracks[2][3] = {
+                { TRACK_DROP_LEFT, TRACK_DROP_FRONT, TRACK_DROP_RIGHT },
+                { TRACK_OBJECT_LEFT, TRACK_OBJECT_FRONT, TRACK_OBJECT_RIGHT },
+            };
+
+            for (int type = 0; type < 2; type++) {
+                for (int pos = 0; pos < 3; pos++) {
+                    if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? objectPixelDetectionThreshold : dropPixelDetectionThreshold)) {
+                        alertedYet[type][pos] = true;
+                        if (!audioBoard.isPlaying()) {
+                            audioBoard.playTrack(alertTracks[type][pos]);
+                        }
+                    } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? objectPixelDetectionThreshold_Low : dropPixelDetectionThreshold_Low)) {
+                        alertedYet[type][pos] = false;
+                        // audioBoard.stop();
+                    }
+                }
+            }
+
+            // if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 100) {
+            //     if (!detectedObjectInFront) {
+            //         detectedObjectInFront = true;
+            //         audioBoard.playTrack(TRACK_OBJECT_FRONT);
+            //     }
+            // } else {
+            //     if (detectedObjectInFront) {
+            //         detectedObjectInFront = false;
+            //     }
+            // }
+        }
+    }
+
+    // if (anythingNewFromFrontSensors) {
+    //     for (int row = 0; row < frontSensorDataHeight; row++) {
+    //         for (int col = 0; col < frontSensorDataWidth; col++) {
+    //             if (distanceData[row][col].isValid) {
+    //                 Serial.print(distanceData[row][col].distanceMm);
+    //             }
+    //             Serial.print("\t");
+    //         }
+    //         Serial.println();
+    //     }
+    //     Serial.println();
+    // }
+
+    // if (frontOrientationSensor.isMeasurementReady()) {
+    //     frontOrientationSensor.getOrientationData(frontOrientationData);
+    //     Serial.println();
+    //     Serial.print(frontOrientationData.Ax);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Ay);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Az);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gx);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gy);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gz);
+    //     Serial.println();
+    //     Serial.println();
+    // }
 }

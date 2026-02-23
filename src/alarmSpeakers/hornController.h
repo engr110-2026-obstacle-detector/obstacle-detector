@@ -13,7 +13,7 @@ public:
     HornController(AlarmSpeaker& speaker, uint32_t hornFreq)
         : alarmSpeaker(speaker)
     {
-        _hornFreq=hornFreq;
+        _hornFreq = hornFreq;
     }
     void begin()
     {
@@ -55,7 +55,7 @@ public:
             return;
         }
         if (hornButton) {
-            alarmSpeaker.playFrequency(_hornFreq); //TODO: MAKE VARIABLE
+            alarmSpeaker.playFrequency(_hornFreq); // TODO: MAKE VARIABLE
         } else {
             alarmSpeaker.stop();
         }

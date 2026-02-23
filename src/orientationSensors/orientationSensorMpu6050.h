@@ -24,8 +24,8 @@ public:
     {
         _mpu.initialize();
         _initialized = _mpu.testConnection();
-        Serial.print("MPU6050 connection ");
-        Serial.println(_initialized ? "successful" : "failed");
+        // Serial.print("MPU6050 connection ");
+        // Serial.println(_initialized ? "successful" : "failed");
         return _initialized;
     }
     bool run()
