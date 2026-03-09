@@ -58,9 +58,15 @@ public:
             // Serial.print("VL53L8CX set ranging mode failed\r\n");
             return false;
         }
-        _initialized = true;
 
         status = _sensor.start_ranging();
+
+        if (status) {
+            // Serial.print("VL53L8CX start ranging failed\r\n");
+            return false;
+        }
+
+        _initialized = true;
 
         return true;
     }
@@ -141,6 +147,22 @@ public:
     bool isInitialized()
     {
         return _initialized;
+    }
+
+    void sleep()
+    {
+        _sensor.stop_ranging();
+        _initialized = false;
+    }
+
+    void wake()
+    {
+        uint8_t status = _sensor.start_ranging();
+        if (status) {
+            // Serial.print("VL53L8CX wake failed\r\n");
+        } else {
+            _initialized = true;
+        }
     }
 };
 #endif // DISTANCE_SENSOR_VL53L8CX_MULTIPLEXER_H

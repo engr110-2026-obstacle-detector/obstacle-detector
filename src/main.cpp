@@ -50,8 +50,8 @@ const uint8_t centralOrientationSensorCSPin = 17;
 
 // alarm speaker
 const uint8_t alarmSpeakerPin = 14; // also uses alarmSpeakerPin+1
-const uint32_t alarmSpeakerLoudestFrequency = 2800; // Hz, 3200 is the true loudest but it hurts my ears
-const uint32_t alarmSpeakerHornFrequency = 220;
+const uint32_t alarmSpeakerLoudestFrequency = 3000; // Hz, 3200 is the true loudest but it hurts my ears
+const uint32_t alarmSpeakerHornFrequency = 440;
 
 // audio board
 const uint8_t audioBoardTxPin = 12;
@@ -75,6 +75,10 @@ DistanceSensorVL53L8cxMultiplexer sensorCenter(frontSensorI2CBus, frontSensorMux
 DistanceSensorVL53L8cxMultiplexer sensorRight(frontSensorI2CBus, frontSensorMuxAddress, 3); // right is mux channel 3
 volatile DistanceData distanceData[frontSensorDataHeight][frontSensorDataWidth]; // 8 rows (height) x 24 cols (3 sensors of 8 cols each)
 
+const uint8_t numToAverage = 4;
+uint8_t frontSensorDataIndex = 0;
+DistanceData distanceDataHistory[numToAverage][frontSensorDataHeight][frontSensorDataWidth];
+
 // const uint8_t lineSensor1Address = 0x49;
 // LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
 
@@ -87,6 +91,9 @@ float voltsPerADCUnit = 0.00512;
 void powerOffCallback()
 {
     alarmSpeaker.stop();
+    sensorLeft.sleep();
+    sensorCenter.sleep();
+    sensorRight.sleep();
 }
 PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetectPin, batMonPin, powerButtonPin, 1, voltsPerADCUnit, lowBatteryThreshold);
 
@@ -209,14 +216,14 @@ void loop()
         // Serial.println(frontSensorPitchAngle);
 
         // TODO: compare to angle from central sensor
-        // if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 45) {
-        //     complainedAboutFrontPitchAngle = true;
-        //     audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
-        //     Serial.println("front sensor not level");
-        // }
-        // if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
-        //     complainedAboutFrontPitchAngle = false;
-        // }
+        if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 45) {
+            complainedAboutFrontPitchAngle = true;
+            audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
+            Serial.println("front sensor not level");
+        }
+        if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
+            complainedAboutFrontPitchAngle = false;
+        }
     }
 
     // if (lineSensorBack.isMeasurementReady()) {
@@ -286,18 +293,49 @@ void loop()
                 delay(1000);
             }
         } else {
+            // average
+            for (int row = 0; row < frontSensorDataHeight; row++) {
+                for (int col = 0; col < frontSensorDataWidth; col++) {
+                    // TODO: BE ABLE TO COPY with = operator
+                    distanceDataHistory[frontSensorDataIndex][row][col].distanceMm = distanceData[row][col].distanceMm;
+                    distanceDataHistory[frontSensorDataIndex][row][col].isValid = distanceData[row][col].isValid;
+                }
+            }
+            frontSensorDataIndex = (frontSensorDataIndex + 1) % numToAverage;
+            DistanceData distanceDataAvg[frontSensorDataHeight][frontSensorDataWidth];
+            for (int row = 0; row < frontSensorDataHeight; row++) {
+                for (int col = 0; col < frontSensorDataWidth; col++) {
+                    int validCount = 0;
+                    int32_t distanceSum = 0;
+                    for (int i = 0; i < numToAverage; i++) {
+                        if (distanceDataHistory[i][row][col].isValid) {
+                            validCount++;
+                            distanceSum += distanceDataHistory[i][row][col].distanceMm;
+                        }
+                    }
+                    if (validCount == numToAverage) { // only consider it valid if all measurements are valid
+                        distanceDataAvg[row][col].isValid = true;
+                        distanceDataAvg[row][col].distanceMm = distanceSum / validCount;
+                    } else {
+                        distanceDataAvg[row][col].isValid = false;
+                    }
+                }
+            }
+
             const int LEFT = 0;
             const int CENTER = 1;
             const int RIGHT = 2;
             const int DROP = 0;
             const int OBJECT = 1;
+
+            const int minDistanceToDetect = 300;
             int detectionCounts[2][3] = { 0 }; // [object/drop][left/center/right]
-            int32_t objectThresholdPerThousand = -75;
-            int32_t dropThresholdPerThousand = 75;
+            int32_t objectThresholdPerThousand = -85;
+            int32_t dropThresholdPerThousand = 85;
             for (int row = 0; row < frontSensorDataHeight; row++) {
                 for (int col = 0; col < frontSensorDataWidth; col++) {
-                    if (distanceData[row][col].isValid && frontSensorZeros[row][col] != 0) {
-                        int32_t adjustedDistance = distanceData[row][col].distanceMm - frontSensorZeros[row][col];
+                    if (distanceDataAvg[row][col].isValid && frontSensorZeros[row][col] != 0 && distanceDataAvg[row][col].distanceMm >= minDistanceToDetect) {
+                        int32_t adjustedDistance = distanceDataAvg[row][col].distanceMm - frontSensorZeros[row][col];
                         // Serial.print(adjustedDistance * 1000 / frontSensorZeros[row][col]);
                         if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
                             detectionCounts[OBJECT][col / 8]++;
@@ -328,8 +366,8 @@ void loop()
             Serial.println();
 
             static bool alertedYet[2][3] = { false }; // [object/drop][left/center/right]
-            const int dropPixelDetectionThreshold = 8; // alert if above this
-            const int objectPixelDetectionThreshold = 8;
+            const int dropPixelDetectionThreshold = 12; // alert if above this
+            const int objectPixelDetectionThreshold = 12;
             const int dropPixelDetectionThreshold_Low = 5; // reset if below this
             const int objectPixelDetectionThreshold_Low = 5;
 

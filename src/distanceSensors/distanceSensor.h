@@ -11,5 +11,7 @@ public:
     virtual bool isMeasurementReady() = 0;
     virtual bool getDistanceData(DistanceData data[], int32_t startCol, int32_t startRow, int32_t arrayCols, int32_t arrayRows) = 0;
     virtual bool isInitialized() = 0;
+    virtual void sleep() = 0;
+    virtual void wake() = 0;
 };
 #endif // DISTANCE_SENSOR_H

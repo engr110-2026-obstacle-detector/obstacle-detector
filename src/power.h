@@ -64,13 +64,13 @@ public:
     void powerOff()
     {
         Serial.println("Powering off...");
-        if (_powerOffCallback) {
-            _powerOffCallback();
-        }
         _audioBoard.playTrack(TRACK_POWER_OFF);
         delay(TRACK_POWER_OFF_TIME);
         digitalWrite(_onLatchPin, LOW);
         delay(100); // should lose power before this line completes
+        if (_powerOffCallback) {
+            _powerOffCallback();
+        }
         Serial.println("If you see this message, power off failed");
         _audioBoard.playTrack(TRACK_ERROR_LET_GO_POWER);
         delay(TRACK_ERROR_LET_GO_POWER_TIME);
