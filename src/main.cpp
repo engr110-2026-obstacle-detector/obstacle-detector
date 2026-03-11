@@ -293,7 +293,7 @@ void loop()
                 delay(1000);
             }
         } else {
-            // average
+            // save data to history
             for (int row = 0; row < frontSensorDataHeight; row++) {
                 for (int col = 0; col < frontSensorDataWidth; col++) {
                     // TODO: BE ABLE TO COPY with = operator
@@ -301,6 +301,7 @@ void loop()
                     distanceDataHistory[frontSensorDataIndex][row][col].isValid = distanceData[row][col].isValid;
                 }
             }
+            // calculate average
             frontSensorDataIndex = (frontSensorDataIndex + 1) % numToAverage;
             DistanceData distanceDataAvg[frontSensorDataHeight][frontSensorDataWidth];
             for (int row = 0; row < frontSensorDataHeight; row++) {
