@@ -79,8 +79,10 @@ const uint8_t numToAverage = 4;
 uint8_t frontSensorDataIndex = 0;
 DistanceData distanceDataHistory[numToAverage][frontSensorDataHeight][frontSensorDataWidth];
 
-// const uint8_t lineSensor1Address = 0x49;
-// LineSensorADS1115 lineSensorBack(Wire, lineSensor1Address);
+const uint8_t lineSensor1Address = 0x49;
+const uint8_t lineSensorSDA = 0;
+const uint8_t lineSensorSCL = 1;
+LineSensorADS1115 lineSensorFront(Wire, lineSensor1Address);
 
 AlarmSpeakerPicoPio alarmSpeaker(alarmSpeakerPin, alarmSpeakerLoudestFrequency);
 HornController horn(alarmSpeaker, alarmSpeakerHornFrequency);
@@ -168,12 +170,12 @@ void setup1()
     sensorRight.begin();
     // Serial.println("Right sensor initialized");
 
-    // Wire.setSDA(lineSensorSDA);
-    // Wire.setSCL(lineSensorSCL);
-    // Wire.begin();
-    // Wire.setTimeout(25, false);
+    Wire.setSDA(lineSensorSDA);
+    Wire.setSCL(lineSensorSCL);
+    Wire.begin();
+    Wire.setTimeout(25, false);
     // lineSensorBack.begin();
-    // lineSensorFront.begin();
+    lineSensorFront.begin();
 
     // longRangeTop.begin();
     // longRangeBottom.begin();
@@ -191,7 +193,7 @@ void loop1()
     delay(5);
     frontOrientationSensor.run();
 
-    // lineSensorFront.run();
+    lineSensorFront.run();
     // lineSensorBack.run();
     delay(5);
 }
@@ -216,7 +218,7 @@ void loop()
         // Serial.println(frontSensorPitchAngle);
 
         // TODO: compare to angle from central sensor
-        if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 45) {
+        if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 35) {
             complainedAboutFrontPitchAngle = true;
             audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
             Serial.println("front sensor not level");
@@ -229,9 +231,20 @@ void loop()
     // if (lineSensorBack.isMeasurementReady()) {
     //     int8_t linePos = lineSensorBack.getLinePosition();
     // }
-    // if (lineSensorFront.isMeasurementReady()) {
-    //     int8_t linePos = lineSensorFront.getLinePosition();
-    // }
+    if (lineSensorFront.isMeasurementReady()) {
+        int8_t linePos = lineSensorFront.getLinePosition();
+        Serial.printf("line position: %d\n", linePos);
+        bool isLineDetected = lineSensorFront.isLineDetected();
+        Serial.printf("line detected: %s\n", isLineDetected ? "true" : "false");
+        int16_t lineSensorReadings[4];
+        lineSensorFront.getRawReadings(lineSensorReadings);
+        Serial.print("Line sensor readings: ");
+        for (int i = 0; i < 4; i++) {
+            Serial.print(lineSensorReadings[i]);
+            Serial.print("\t");
+        }
+        Serial.println();
+    }
 
     bool anythingNewFromFrontSensors = false;
     if (sensorLeft.isMeasurementReady()) {
@@ -353,18 +366,18 @@ void loop()
                 // Serial.println();
             }
 
-            Serial.print("objectPixels:\t");
-            for (int i = 0; i < 3; i++) {
-                Serial.print(detectionCounts[OBJECT][i]);
-                Serial.print("\t");
-            }
-            Serial.print("\t");
-            Serial.print("dropPixels:\t");
-            for (int i = 0; i < 3; i++) {
-                Serial.print(detectionCounts[DROP][i]);
-                Serial.print("\t");
-            }
-            Serial.println();
+            // Serial.print("objectPixels:\t");
+            // for (int i = 0; i < 3; i++) {
+            //     Serial.print(detectionCounts[OBJECT][i]);
+            //     Serial.print("\t");
+            // }
+            // Serial.print("\t");
+            // Serial.print("dropPixels:\t");
+            // for (int i = 0; i < 3; i++) {
+            //     Serial.print(detectionCounts[DROP][i]);
+            //     Serial.print("\t");
+            // }
+            // Serial.println();
 
             static bool alertedYet[2][3] = { false }; // [object/drop][left/center/right]
             const int dropPixelDetectionThreshold = 12; // alert if above this

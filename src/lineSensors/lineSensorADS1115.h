@@ -42,7 +42,7 @@ public:
         }
 
         _adc.setVoltageRange_mV(ADS1115_RANGE_4096);
-        // _adc.setConvRate(ADS1115_128_SPS);
+        _adc.setConvRate(ADS1115_32_SPS);
 
         _adc.setCompareChannels_nonblock(channelMap[0]);
 
@@ -105,13 +105,13 @@ public:
         _newData = false;
         // Calculate and return the line position
 
-        return 0;
+        return constrain((_readings[0] - _readings[3])/100, -100, 100); // todo: test, and improve
     }
 
     bool isLineDetected()
     {
         // Return true if a line is detected
-        return false;
+        return _readings[1] < 3000 || _readings[2] < 3000; // todo: test, and improve
     }
 
     void getRawReadings(int16_t* readingsBuffer)
