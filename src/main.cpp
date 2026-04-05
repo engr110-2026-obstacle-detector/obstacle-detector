@@ -22,6 +22,8 @@
 
 #include <Wifi.h>
 
+#define ALGORITHM 1
+
 // CONSTANTS
 const uint32_t startup1Timeout = 45000; // milliseconds
 float lowBatteryThreshold = 3.5;
@@ -102,6 +104,7 @@ PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetect
 volatile bool setup1Done = false;
 volatile bool setupDone = false;
 
+bool anythingNewFromFrontSensors = false;
 #include "misc.h"
 
 void setup()
@@ -231,6 +234,8 @@ void loop()
     // if (lineSensorBack.isMeasurementReady()) {
     //     int8_t linePos = lineSensorBack.getLinePosition();
     // }
+    const int lineSensorPeriod = 1100;
+    static unsigned int lineSensorLastMillis = 0;
     if (lineSensorFront.isMeasurementReady()) {
         int8_t linePos = lineSensorFront.getLinePosition();
         Serial.printf("line position: %d\n", linePos);
@@ -244,9 +249,21 @@ void loop()
             Serial.print("\t");
         }
         Serial.println();
+        if (millis() - lineSensorLastMillis > lineSensorPeriod) {
+            lineSensorLastMillis = millis();
+            if (isLineDetected) {
+                if (linePos < -50) {
+                    audioBoard.playTrack(TRACK_LINE_LEFT);
+                } else if (linePos > 50) {
+                    audioBoard.playTrack(TRACK_LINE_RIGHT);
+                } else {
+                    audioBoard.playTrack(TRACK_LINE_CENTER);
+                }
+            }
+        }
     }
 
-    bool anythingNewFromFrontSensors = false;
+    anythingNewFromFrontSensors = false;
     if (sensorLeft.isMeasurementReady()) {
         anythingNewFromFrontSensors = true;
         sensorLeft.getDistanceData((DistanceData*)distanceData, 0, 0, frontSensorDataWidth, frontSensorDataHeight);
@@ -259,6 +276,47 @@ void loop()
         anythingNewFromFrontSensors = true;
         sensorRight.getDistanceData((DistanceData*)distanceData, 16, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
+
+    void ALGORITHM_1();
+
+#if ALGORITHM == 1 // ALGORITHM 1
+    ALGORITHM_1();
+#endif
+
+    // if (anythingNewFromFrontSensors) {
+    //     for (int row = 0; row < frontSensorDataHeight; row++) {
+    //         for (int col = 0; col < frontSensorDataWidth; col++) {
+    //             if (distanceData[row][col].isValid) {
+    //                 Serial.print(distanceData[row][col].distanceMm);
+    //             }
+    //             Serial.print("\t");
+    //         }
+    //         Serial.println();
+    //     }
+    //     Serial.println();
+    // }
+
+    // if (frontOrientationSensor.isMeasurementReady()) {
+    //     frontOrientationSensor.getOrientationData(frontOrientationData);
+    //     Serial.println();
+    //     Serial.print(frontOrientationData.Ax);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Ay);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Az);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gx);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gy);
+    //     Serial.print("\t");
+    //     Serial.print(frontOrientationData.Gz);
+    //     Serial.println();
+    //     Serial.println();
+    // }
+}
+
+void ALGORITHM_1()
+{
 
     static int32_t frontSensorInitialization = 10;
     static int32_t frontSensorZeros[frontSensorDataHeight][frontSensorDataWidth] = { 0 }; // distances measured from flat floor at startup
@@ -395,7 +453,10 @@ void loop()
                     if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? objectPixelDetectionThreshold : dropPixelDetectionThreshold)) {
                         alertedYet[type][pos] = true;
                         if (!audioBoard.isPlaying()) {
-                            audioBoard.playTrack(alertTracks[type][pos]);
+                            if (type == 0 && pos == 2) { // Corey Case: mute alerts for objects on the right since Corey should be there.
+                            } else {
+                                audioBoard.playTrack(alertTracks[type][pos]);
+                            }
                         }
                     } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? objectPixelDetectionThreshold_Low : dropPixelDetectionThreshold_Low)) {
                         alertedYet[type][pos] = false;
@@ -403,48 +464,6 @@ void loop()
                     }
                 }
             }
-
-            // if (distanceData[4][12].isValid && distanceData[4][12].distanceMm < 100) {
-            //     if (!detectedObjectInFront) {
-            //         detectedObjectInFront = true;
-            //         audioBoard.playTrack(TRACK_OBJECT_FRONT);
-            //     }
-            // } else {
-            //     if (detectedObjectInFront) {
-            //         detectedObjectInFront = false;
-            //     }
-            // }
         }
     }
-
-    // if (anythingNewFromFrontSensors) {
-    //     for (int row = 0; row < frontSensorDataHeight; row++) {
-    //         for (int col = 0; col < frontSensorDataWidth; col++) {
-    //             if (distanceData[row][col].isValid) {
-    //                 Serial.print(distanceData[row][col].distanceMm);
-    //             }
-    //             Serial.print("\t");
-    //         }
-    //         Serial.println();
-    //     }
-    //     Serial.println();
-    // }
-
-    // if (frontOrientationSensor.isMeasurementReady()) {
-    //     frontOrientationSensor.getOrientationData(frontOrientationData);
-    //     Serial.println();
-    //     Serial.print(frontOrientationData.Ax);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Ay);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Az);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gx);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gy);
-    //     Serial.print("\t");
-    //     Serial.print(frontOrientationData.Gz);
-    //     Serial.println();
-    //     Serial.println();
-    // }
 }
