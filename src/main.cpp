@@ -107,6 +107,8 @@ volatile bool setupDone = false;
 bool anythingNewFromFrontSensors = false;
 #include "misc.h"
 
+DistanceData convolutionOutput[frontSensorDataHeight][frontSensorDataWidth];
+
 void setup()
 {
     powerControl.on();
@@ -201,6 +203,55 @@ void loop1()
     delay(5);
 }
 
+void ALGORITHM_1();
+
+/**
+ * @brief
+ * @param  input[]:
+ * @param  output[]:
+ * @param  kernel[]:
+ * @param  input_width:
+ * @param  output_width:
+ * @param  output_height:
+ * @param  kernel_width:
+ * @param  kernel_height:
+ * @param  validThreshold:
+ * @retval
+ */
+bool convolution(DistanceData input[], DistanceData output[], int32_t kernel[], int input_width, int input_height, int output_width, int output_height, int kernel_width, int kernel_height, int validThreshold, bool countZeroKernelAsValid)
+{
+    if (output_height < input_height - kernel_height + 1 || output_width < input_width - kernel_width + 1) {
+        // Serial.println("Invalid output dimensions for convolution");
+        return false;
+    }
+    if (validThreshold <= 0) {
+        // Serial.println("validThreshold must be greater than 0");
+        return false;
+    }
+    for (int inx = 0; inx < input_width - kernel_width + 1; inx++) {
+        for (int iny = 0; iny < input_height - kernel_height + 1; iny++) {
+            // for each output pixel
+            int validCount = 0;
+            int32_t sum = 0;
+            for (int kx = 0; kx < kernel_width; kx++) {
+                for (int ky = 0; ky < kernel_height; ky++) {
+                    if (input[(iny + ky) * input_width + (inx + kx)].isValid || (countZeroKernelAsValid && kernel[ky * kernel_width + kx] == 0)) {
+                        validCount++;
+                        sum += input[(iny + ky) * input_width + (inx + kx)].distanceMm * kernel[ky * kernel_width + kx];
+                    }
+                }
+            }
+            if (validCount >= validThreshold) {
+                output[iny * output_width + inx].isValid = true;
+                output[iny * output_width + inx].distanceMm = sum / validCount;
+            } else {
+                output[iny * output_width + inx].isValid = false;
+            }
+        }
+    }
+    return true;
+}
+
 void loop()
 { // fast main loop
     powerControl.run();
@@ -223,12 +274,16 @@ void loop()
         // TODO: compare to angle from central sensor
         if (!complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) > 35) {
             complainedAboutFrontPitchAngle = true;
-            audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
+            // audioBoard.playTrack(TRACK_FRONT_SENSOR_NOT_LEVEL);
             Serial.println("front sensor not level");
         }
         if (complainedAboutFrontPitchAngle && abs(frontSensorPitchAngle) < 20) {
             complainedAboutFrontPitchAngle = false;
         }
+        Serial.print("DiSp,P,");
+        Serial.println(frontSensorPitchAngle);
+        Serial.print("DiSp,V,");
+        Serial.println(analogRead(batMonPin) * voltsPerADCUnit);
     }
 
     // if (lineSensorBack.isMeasurementReady()) {
@@ -276,25 +331,37 @@ void loop()
         anythingNewFromFrontSensors = true;
         sensorRight.getDistanceData((DistanceData*)distanceData, 16, 0, frontSensorDataWidth, frontSensorDataHeight);
     }
-
-    void ALGORITHM_1();
-
 #if ALGORITHM == 1 // ALGORITHM 1
     ALGORITHM_1();
 #endif
+    if (anythingNewFromFrontSensors) {
+        Serial.print("DiSp,A,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (distanceData[row][col].isValid) {
+                    Serial.print(distanceData[row][col].distanceMm);
+                } else {
+                    Serial.print("nan");
+                }
+                Serial.print(",");
+            }
+        }
+        Serial.println();
 
-    // if (anythingNewFromFrontSensors) {
-    //     for (int row = 0; row < frontSensorDataHeight; row++) {
-    //         for (int col = 0; col < frontSensorDataWidth; col++) {
-    //             if (distanceData[row][col].isValid) {
-    //                 Serial.print(distanceData[row][col].distanceMm);
-    //             }
-    //             Serial.print("\t");
-    //         }
-    //         Serial.println();
-    //     }
-    //     Serial.println();
-    // }
+        convolution((DistanceData*)distanceData, (DistanceData*)convolutionOutput, (int32_t[]) { -1, -2, -1, 0, 0, 0, 1, 2, 1 }, frontSensorDataWidth, frontSensorDataHeight, frontSensorDataWidth, frontSensorDataHeight, 3, 3, 9, true);
+        Serial.print("DiSp,C,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (convolutionOutput[row][col].isValid) {
+                    Serial.print(convolutionOutput[row][col].distanceMm);
+                } else {
+                    Serial.print("nan");
+                }
+                Serial.print(",");
+            }
+        }
+        Serial.println();
+    }
 
     // if (frontOrientationSensor.isMeasurementReady()) {
     //     frontOrientationSensor.getOrientationData(frontOrientationData);
@@ -404,25 +471,25 @@ void ALGORITHM_1()
             int detectionCounts[2][3] = { 0 }; // [object/drop][left/center/right]
             int32_t objectThresholdPerThousand = -85;
             int32_t dropThresholdPerThousand = 85;
+
+            // Serial.print("DiSp,B,");
             for (int row = 0; row < frontSensorDataHeight; row++) {
                 for (int col = 0; col < frontSensorDataWidth; col++) {
                     if (distanceDataAvg[row][col].isValid && frontSensorZeros[row][col] != 0 && distanceDataAvg[row][col].distanceMm >= minDistanceToDetect) {
                         int32_t adjustedDistance = distanceDataAvg[row][col].distanceMm - frontSensorZeros[row][col];
-                        // Serial.print(adjustedDistance * 1000 / frontSensorZeros[row][col]);
+                        // Serial.print(adjustedDistance);
                         if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
                             detectionCounts[OBJECT][col / 8]++;
-                            // Serial.print("o ");
                         } else if (adjustedDistance > frontSensorZeros[row][col] * dropThresholdPerThousand / 1000) {
                             detectionCounts[DROP][col / 8]++;
-                            // Serial.print("d ");
                         }
                     } else {
-                        // Serial.print("x ");
+                        // Serial.print("nan");
                     }
-                    // Serial.print("\t");
+                    // Serial.print(",");
                 }
-                // Serial.println();
             }
+            Serial.println();
 
             // Serial.print("objectPixels:\t");
             // for (int i = 0; i < 3; i++) {
@@ -455,7 +522,7 @@ void ALGORITHM_1()
                         if (!audioBoard.isPlaying()) {
                             if (type == 0 && pos == 2) { // Corey Case: mute alerts for objects on the right since Corey should be there.
                             } else {
-                                audioBoard.playTrack(alertTracks[type][pos]);
+                                // audioBoard.playTrack(alertTracks[type][pos]);
                             }
                         }
                     } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? objectPixelDetectionThreshold_Low : dropPixelDetectionThreshold_Low)) {
