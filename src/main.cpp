@@ -95,9 +95,6 @@ float voltsPerADCUnit = 0.00512;
 void powerOffCallback()
 {
     alarmSpeaker.stop();
-    sensorLeft.sleep();
-    sensorCenter.sleep();
-    sensorRight.sleep();
 }
 PowerControl powerControl(audioBoard, powerOffCallback, onLatchPin, chargeDetectPin, batMonPin, powerButtonPin, 1, voltsPerADCUnit, lowBatteryThreshold);
 
@@ -115,7 +112,7 @@ void setup()
     audioBoard.begin();
     powerControl.start();
     delay(15);
-    Serial.begin(500000);
+    Serial.begin(1000000);
     Serial.println("Serial starting...");
 
     SPI.begin();
@@ -197,6 +194,8 @@ void loop1()
     sensorRight.run();
     delay(5);
     frontOrientationSensor.run();
+
+    delay(100); // don't swamp the computer
 
     lineSensorFront.run();
     // lineSensorBack.run();
@@ -348,6 +347,19 @@ void loop()
         }
         Serial.println();
 
+        Serial.print("DiSp,D,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (distanceData[row][col].isValid) {
+                    Serial.print(distanceData[row][col].sigma);
+                } else {
+                    Serial.print("nan");
+                }
+                Serial.print(",");
+            }
+        }
+        Serial.println();
+
         convolution((DistanceData*)distanceData, (DistanceData*)convolutionOutput, (int32_t[]) { -1, -2, -1, 0, 0, 0, 1, 2, 1 }, frontSensorDataWidth, frontSensorDataHeight, frontSensorDataWidth, frontSensorDataHeight, 3, 3, 9, true);
         Serial.print("DiSp,C,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
@@ -472,21 +484,21 @@ void ALGORITHM_1()
             int32_t objectThresholdPerThousand = -85;
             int32_t dropThresholdPerThousand = 85;
 
-            // Serial.print("DiSp,B,");
+            Serial.print("DiSp,B,");
             for (int row = 0; row < frontSensorDataHeight; row++) {
                 for (int col = 0; col < frontSensorDataWidth; col++) {
                     if (distanceDataAvg[row][col].isValid && frontSensorZeros[row][col] != 0 && distanceDataAvg[row][col].distanceMm >= minDistanceToDetect) {
                         int32_t adjustedDistance = distanceDataAvg[row][col].distanceMm - frontSensorZeros[row][col];
-                        // Serial.print(adjustedDistance);
+                        Serial.print(adjustedDistance);
                         if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
                             detectionCounts[OBJECT][col / 8]++;
                         } else if (adjustedDistance > frontSensorZeros[row][col] * dropThresholdPerThousand / 1000) {
                             detectionCounts[DROP][col / 8]++;
                         }
                     } else {
-                        // Serial.print("nan");
+                        Serial.print("nan");
                     }
-                    // Serial.print(",");
+                    Serial.print(",");
                 }
             }
             Serial.println();
