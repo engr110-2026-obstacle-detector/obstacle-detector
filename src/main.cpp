@@ -213,7 +213,7 @@ void setup1()
     Wire.begin();
     Wire.setTimeout(25, false);
     // lineSensorBack.begin();
-    lineSensorFront.begin();
+    // lineSensorFront.begin();
 
     // longRangeTop.begin();
     // longRangeBottom.begin();
@@ -544,7 +544,7 @@ void ALGORITHM_4()
                 // we have three valid points to check
                 int32_t dist = fastClosestLineDistance(pointcloud[startI][column], pointcloud[endI][column], pointcloud[midI][column]);
                 // Serial.println(dist);
-                if (dist < 20) {
+                if (dist < 35) {
                     pointcloud[startI][column].segment = segmentID;
                     pointcloud[endI][column].segment = segmentID;
                     pointcloud[midI][column].segment = segmentID;
