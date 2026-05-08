@@ -514,6 +514,7 @@ void ALGORITHM_4()
 
     int segmentID = 1;
     for (int column = 0; column < frontSensorDataWidth; column++) {
+        segmentID++;
         for (int row = 0; row < frontSensorDataHeight; row++) {
             pointcloud[row][column].segment = 0;
         }
@@ -542,7 +543,8 @@ void ALGORITHM_4()
             if (endI >= 0) {
                 // we have three valid points to check
                 int32_t dist = fastClosestLineDistance(pointcloud[startI][column], pointcloud[endI][column], pointcloud[midI][column]);
-                if (dist < 30) {
+                // Serial.println(dist);
+                if (dist < 20) {
                     pointcloud[startI][column].segment = segmentID;
                     pointcloud[endI][column].segment = segmentID;
                     pointcloud[midI][column].segment = segmentID;
