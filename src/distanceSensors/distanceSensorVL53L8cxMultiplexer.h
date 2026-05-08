@@ -140,7 +140,7 @@ public:
                 }
                 data[arrayIndex].distanceMm = Results.distance_mm[sensorIndex];
                 data[arrayIndex].isValid = (Results.target_status[sensorIndex] == 5); // 5 means fully valid measurement
-                data[arrayIndex].sigma = (Results.range_sigma_mm[sensorIndex]);
+                // data[arrayIndex].sigma = (Results.range_sigma_mm[sensorIndex]);
             }
         }
         return true;

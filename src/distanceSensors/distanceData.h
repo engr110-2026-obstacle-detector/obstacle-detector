@@ -5,7 +5,6 @@
 typedef struct {
     int32_t distanceMm;
     bool isValid;
-    uint16_t sigma;
 } DistanceData;
 
 #endif // DISTANCE_DATA_H

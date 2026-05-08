@@ -22,7 +22,8 @@
 
 #include <Wifi.h>
 
-#define ALGORITHM 1
+// #define ALGORITHM 1
+#define ALGORITHM 2 // plane finding, region growing segmentation https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html
 
 // CONSTANTS
 const uint32_t startup1Timeout = 45000; // milliseconds
@@ -105,6 +106,40 @@ bool anythingNewFromFrontSensors = false;
 #include "misc.h"
 
 DistanceData convolutionOutput[frontSensorDataHeight][frontSensorDataWidth];
+
+typedef struct {
+    boolean valid;
+    int16_t x;
+    int16_t y;
+    int16_t z;
+} Point;
+
+Point pointcloud[frontSensorDataHeight][frontSensorDataWidth];
+
+void sensorToPointCloud(DistanceData* distanceData, Point* pointCloud, int distanceDataColOffset, int sensorNumCols, float focal_length_x, float focal_length_y, float sensorYaw)
+{
+    // x is forward, y is left, z is up
+    float cyaw = cos(radians(sensorYaw));
+    float syaw = sin(radians(sensorYaw));
+    for (int y = 0; y < frontSensorDataHeight; y++) {
+        for (int x = 0; x < sensorNumCols; x++) {
+            int arrayIndex = y * frontSensorDataWidth + distanceDataColOffset + x;
+            if (distanceData[arrayIndex].isValid) {
+                pointCloud[arrayIndex].valid = true;
+                float xcoord = distanceData[arrayIndex].distanceMm;
+                float ycoord = (x - sensorNumCols / 2) * xcoord / focal_length_x;
+                float zcoord = (y - frontSensorDataHeight / 2) * xcoord / focal_length_y;
+
+                pointCloud[arrayIndex].x = xcoord * cyaw - ycoord * syaw;
+                pointCloud[arrayIndex].y = ycoord * cyaw + xcoord * syaw;
+                pointCloud[arrayIndex].z = zcoord;
+
+            } else {
+                pointCloud[arrayIndex].valid = false;
+            }
+        }
+    }
+}
 
 void setup()
 {
@@ -194,8 +229,6 @@ void loop1()
     sensorRight.run();
     delay(5);
     frontOrientationSensor.run();
-
-    delay(100); // don't swamp the computer
 
     lineSensorFront.run();
     // lineSensorBack.run();
@@ -347,32 +380,59 @@ void loop()
         }
         Serial.println();
 
-        Serial.print("DiSp,D,");
-        for (int row = 0; row < frontSensorDataHeight; row++) {
-            for (int col = 0; col < frontSensorDataWidth; col++) {
-                if (distanceData[row][col].isValid) {
-                    Serial.print(distanceData[row][col].sigma);
-                } else {
-                    Serial.print("nan");
-                }
-                Serial.print(",");
-            }
-        }
-        Serial.println();
+        sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 8, 8, 8.45, 8.45, 0);
+        sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 0, 8, 8.45, 8.45, -45);
+        sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 16, 8, 8.45, 8.45, 45);
 
-        convolution((DistanceData*)distanceData, (DistanceData*)convolutionOutput, (int32_t[]) { -1, -2, -1, 0, 0, 0, 1, 2, 1 }, frontSensorDataWidth, frontSensorDataHeight, frontSensorDataWidth, frontSensorDataHeight, 3, 3, 9, true);
-        Serial.print("DiSp,C,");
+        Serial.print("DiSp,X,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
-                if (convolutionOutput[row][col].isValid) {
-                    Serial.print(convolutionOutput[row][col].distanceMm);
-                } else {
-                    Serial.print("nan");
+                if (pointcloud[row][col].valid) {
+                    Serial.print(pointcloud[row][col].x);
+
+                    Serial.print(",");
                 }
-                Serial.print(",");
             }
         }
         Serial.println();
+        delay(50);
+        Serial.print("DiSp,Y,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (pointcloud[row][col].valid) {
+                    Serial.print(pointcloud[row][col].y);
+
+                    Serial.print(",");
+                }
+            }
+        }
+        Serial.println();
+        delay(50);
+        Serial.print("DiSp,Z,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (pointcloud[row][col].valid) {
+                    Serial.print(pointcloud[row][col].z);
+                    Serial.print(",");
+                }
+            }
+        }
+        Serial.println();
+        delay(50);
+
+        // convolution((DistanceData*)distanceData, (DistanceData*)convolutionOutput, (int32_t[]) { -1, -2, -1, 0, 0, 0, 1, 2, 1 }, frontSensorDataWidth, frontSensorDataHeight, frontSensorDataWidth, frontSensorDataHeight, 3, 3, 9, true);
+        // Serial.print("DiSp,C,");
+        // for (int row = 0; row < frontSensorDataHeight; row++) {
+        //     for (int col = 0; col < frontSensorDataWidth; col++) {
+        //         if (convolutionOutput[row][col].isValid) {
+        //             Serial.print(convolutionOutput[row][col].distanceMm);
+        //         } else {
+        //             Serial.print("nan");
+        //         }
+        //         Serial.print(",");
+        //     }
+        // }
+        // Serial.println();
     }
 
     // if (frontOrientationSensor.isMeasurementReady()) {
@@ -484,24 +544,24 @@ void ALGORITHM_1()
             int32_t objectThresholdPerThousand = -85;
             int32_t dropThresholdPerThousand = 85;
 
-            Serial.print("DiSp,B,");
-            for (int row = 0; row < frontSensorDataHeight; row++) {
-                for (int col = 0; col < frontSensorDataWidth; col++) {
-                    if (distanceDataAvg[row][col].isValid && frontSensorZeros[row][col] != 0 && distanceDataAvg[row][col].distanceMm >= minDistanceToDetect) {
-                        int32_t adjustedDistance = distanceDataAvg[row][col].distanceMm - frontSensorZeros[row][col];
-                        Serial.print(adjustedDistance);
-                        if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
-                            detectionCounts[OBJECT][col / 8]++;
-                        } else if (adjustedDistance > frontSensorZeros[row][col] * dropThresholdPerThousand / 1000) {
-                            detectionCounts[DROP][col / 8]++;
-                        }
-                    } else {
-                        Serial.print("nan");
-                    }
-                    Serial.print(",");
-                }
-            }
-            Serial.println();
+            // Serial.print("DiSp,B,");
+            // for (int row = 0; row < frontSensorDataHeight; row++) {
+            //     for (int col = 0; col < frontSensorDataWidth; col++) {
+            //         if (distanceDataAvg[row][col].isValid && frontSensorZeros[row][col] != 0 && distanceDataAvg[row][col].distanceMm >= minDistanceToDetect) {
+            //             int32_t adjustedDistance = distanceDataAvg[row][col].distanceMm - frontSensorZeros[row][col];
+            //             Serial.print(adjustedDistance);
+            //             if (adjustedDistance < frontSensorZeros[row][col] * objectThresholdPerThousand / 1000) {
+            //                 detectionCounts[OBJECT][col / 8]++;
+            //             } else if (adjustedDistance > frontSensorZeros[row][col] * dropThresholdPerThousand / 1000) {
+            //                 detectionCounts[DROP][col / 8]++;
+            //             }
+            //         } else {
+            //             Serial.print("nan");
+            //         }
+            //         Serial.print(",");
+            //     }
+            // }
+            // Serial.println();
 
             // Serial.print("objectPixels:\t");
             // for (int i = 0; i < 3; i++) {
