@@ -1,4 +1,3 @@
-
 #include "distanceSensors/distanceData.h"
 #include "distanceSensors/distanceSensorVL53L8cxMultiplexer.h"
 
@@ -17,6 +16,10 @@
 #include "orientationSensors/orientationSensorMpu6050.h"
 
 #include "power.h"
+
+#include "point.h"
+
+#include "ransacSegmentation.h"
 
 #include <Arduino.h>
 
@@ -107,12 +110,6 @@ bool anythingNewFromFrontSensors = false;
 
 DistanceData convolutionOutput[frontSensorDataHeight][frontSensorDataWidth];
 
-typedef struct {
-    boolean valid;
-    int16_t x;
-    int16_t y;
-    int16_t z;
-} Point;
 
 Point pointcloud[frontSensorDataHeight][frontSensorDataWidth];
 
@@ -236,6 +233,7 @@ void loop1()
 }
 
 void ALGORITHM_1();
+void ALGORITHM_2();
 
 /**
  * @brief
@@ -384,11 +382,27 @@ void loop()
         sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 0, 8, 8.45, 8.45, -45);
         sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 16, 8, 8.45, 8.45, 45);
 
+#if ALGORITHM == 2
+        ALGORITHM_2();
+#endif
+
         Serial.print("DiSp,X,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
                 if (pointcloud[row][col].valid) {
                     Serial.print(pointcloud[row][col].x);
+
+                    Serial.print(",");
+                }
+            }
+        }
+        Serial.println();
+        delay(50);
+        Serial.print("DiSp,I,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (pointcloud[row][col].valid) {
+                    Serial.print(pointcloud[row][col].segment);
 
                     Serial.print(",");
                 }
@@ -452,6 +466,108 @@ void loop()
     //     Serial.println();
     //     Serial.println();
     // }
+}
+
+void ALGORITHM_2()
+{
+    // RANSAC-based flat surface segmentation
+    // Segments the point cloud into regions containing flat surfaces
+    // Each point gets assigned a unique segment ID based on plane fitting
+
+    const int RANSAC_MAX_ITERATIONS = 100;
+    const int RANSAC_TOLERANCE_MM = 50;
+    const int MIN_SURFACE_SIZE = 9; // minimum points to form a valid surface
+
+    // Initialize visited tracking for flood fill
+    static bool visited[frontSensorDataHeight][frontSensorDataWidth];
+    memset(visited, 0, sizeof(visited));
+
+    static Point tempPoints[192];
+
+    // Reset all segment IDs
+    for (int row = 0; row < frontSensorDataHeight; row++) {
+        for (int col = 0; col < frontSensorDataWidth; col++) {
+            pointcloud[row][col].segment = 0;
+        }
+    }
+
+    int nextSegmentId = 1;
+
+    // Find connected components and segment each one
+    for (int row = 0; row < frontSensorDataHeight; row++) {
+        for (int col = 0; col < frontSensorDataWidth; col++) {
+            if (!visited[row][col] && pointcloud[row][col].valid) {
+                // Start a new connected component
+                // First, gather all points in this component via flood fill
+                int componentIndices[192]; // maximum 8*24 points
+                int componentCount = 0;
+
+                // Use a manual queue-based flood fill to avoid stack overflow
+                int queue[192][2];
+                int queueHead = 0, queueTail = 0;
+
+                queue[queueTail][0] = row;
+                queue[queueTail][1] = col;
+                queueTail++;
+                visited[row][col] = true;
+
+                while (queueHead < queueTail) {
+                    int r = queue[queueHead][0];
+                    int c = queue[queueHead][1];
+                    queueHead++;
+
+                    // Add this point to component
+                    componentIndices[componentCount++] = r * frontSensorDataWidth + c;
+
+                    // Check 4-neighbors
+                    int neighbors[4][2] = { { r - 1, c }, { r + 1, c }, { r, c - 1 }, { r, c + 1 } };
+                    for (int n = 0; n < 4; n++) {
+                        int nr = neighbors[n][0];
+                        int nc = neighbors[n][1];
+
+                        if (nr >= 0 && nr < frontSensorDataHeight && nc >= 0 && nc < frontSensorDataWidth && !visited[nr][nc] && pointcloud[nr][nc].valid) {
+                            visited[nr][nc] = true;
+                            queue[queueTail][0] = nr;
+                            queue[queueTail][1] = nc;
+                            queueTail++;
+                        }
+                    }
+                }
+
+                // Only process components with minimum surface size
+                if (componentCount >= MIN_SURFACE_SIZE) {
+                    // Create temporary Point array for this component
+                    for (int i = 0; i < componentCount; i++) {
+                        int idx = componentIndices[i];
+                        int row = idx / frontSensorDataWidth;
+                        int col = idx % frontSensorDataWidth;
+                        pointcloud[row][col].segment = nextSegmentId;
+                    }
+
+                    // Run RANSAC to find best-fit plane for this component
+                    int inlierCount = 0;
+                    Plane bestPlane = bestFitPlane(tempPoints, componentCount,
+                        RANSAC_TOLERANCE_MM,
+                        RANSAC_MAX_ITERATIONS,
+                        inlierCount);
+
+                    // Assign points that are inliers to this segment
+                    if (inlierCount >= MIN_SURFACE_SIZE) {
+                        for (int i = 0; i < componentCount; i++) {
+                            float dist = pointToPlaneDistance(tempPoints[i], bestPlane);
+                            if (abs(dist) <= RANSAC_TOLERANCE_MM) {
+                                int idx = componentIndices[i];
+                                int row = idx / frontSensorDataWidth;
+                                int col = idx % frontSensorDataWidth;
+                                pointcloud[row][col].segment = nextSegmentId;
+                            }
+                        }
+                        nextSegmentId++;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void ALGORITHM_1()
