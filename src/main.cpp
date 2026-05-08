@@ -19,6 +19,7 @@
 
 #include "point.h"
 
+#include "lineSegmentation.h"
 #include "ransacSegmentation.h"
 
 #include <Arduino.h>
@@ -26,7 +27,11 @@
 #include <Wifi.h>
 
 // #define ALGORITHM 1
-#define ALGORITHM 2 // plane finding, region growing segmentation https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html
+// #define ALGORITHM 2 // plane finding, region growing segmentation https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html, ai generated, just freezes
+// #define ALGORITHM 3 // tried to fit line segments to each column, sets all point segmentIDs to 0, ai generated
+#define ALGORITHM 4 // performance optimized line fitting, handmade
+
+// https://github.com/lorenwel/linefit_ground_segmentation
 
 // CONSTANTS
 const uint32_t startup1Timeout = 45000; // milliseconds
@@ -109,7 +114,6 @@ bool anythingNewFromFrontSensors = false;
 #include "misc.h"
 
 DistanceData convolutionOutput[frontSensorDataHeight][frontSensorDataWidth];
-
 
 Point pointcloud[frontSensorDataHeight][frontSensorDataWidth];
 
@@ -234,6 +238,8 @@ void loop1()
 
 void ALGORITHM_1();
 void ALGORITHM_2();
+void ALGORITHM_3();
+void ALGORITHM_4();
 
 /**
  * @brief
@@ -386,6 +392,14 @@ void loop()
         ALGORITHM_2();
 #endif
 
+#if ALGORITHM == 3
+        ALGORITHM_3();
+#endif
+
+#if ALGORITHM == 4
+        ALGORITHM_4();
+#endif
+
         Serial.print("DiSp,X,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
@@ -466,6 +480,152 @@ void loop()
     //     Serial.println();
     //     Serial.println();
     // }
+}
+
+int32_t fastClosestLineDistance(Point pstart, Point pend, Point ptest, byte divisionPow2 = 4)
+{
+    int dx = pend.x - pstart.x;
+    int dy = pend.y - pstart.y;
+    int dz = pend.z - pstart.z;
+
+    int stepx = dx >> divisionPow2;
+    int stepy = dy >> divisionPow2;
+    int stepz = dz >> divisionPow2;
+
+    Point comparePoint = pstart;
+
+    int32_t bestDistance = INT32_MAX;
+
+    for (byte i = 0; i < (1 << divisionPow2) - 1; i++) {
+        comparePoint.x += stepx;
+        comparePoint.y += stepy;
+        comparePoint.z += stepz;
+
+        uint32_t distanceL1 = abs(comparePoint.x - ptest.x) + abs(comparePoint.y - ptest.y) + abs(comparePoint.z - ptest.z);
+        if (distanceL1 < bestDistance) {
+            bestDistance = distanceL1;
+        }
+    }
+    return bestDistance;
+}
+
+void ALGORITHM_4()
+{
+
+    int segmentID = 1;
+    for (int column = 0; column < frontSensorDataWidth; column++) {
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            pointcloud[row][column].segment = 0;
+        }
+
+        int startI = frontSensorDataHeight - 1;
+        int midI = frontSensorDataHeight - 2;
+        int endI = frontSensorDataHeight - 3;
+
+        while (endI >= 0) {
+
+            if (pointcloud[startI][column].valid == false) {
+                endI--;
+                midI--;
+                startI--;
+            }
+
+            if (pointcloud[midI][column].valid == false) {
+                endI--;
+                midI--;
+            }
+
+            if (pointcloud[endI][column].valid == false) {
+                endI--;
+            }
+
+            if (endI >= 0) {
+                // we have three valid points to check
+                int32_t dist = fastClosestLineDistance(pointcloud[startI][column], pointcloud[endI][column], pointcloud[midI][column]);
+                if (dist < 30) {
+                    pointcloud[startI][column].segment = segmentID;
+                    pointcloud[endI][column].segment = segmentID;
+                    pointcloud[midI][column].segment = segmentID;
+                } else {
+                    pointcloud[startI][column].segment = segmentID;
+                    segmentID++;
+                    pointcloud[endI][column].segment = segmentID;
+                    pointcloud[midI][column].segment = segmentID;
+                }
+            }
+
+            endI--;
+            midI--;
+            startI--;
+        } // end while
+    }
+}
+
+void ALGORITHM_3()
+{
+    // Per-column 3D line segmentation
+    // For each of 24 sensor columns, detect discontinuities and fit 3D lines to segments
+    // Minimum 3 points required per line segment
+
+    const int DISCONTINUITY_THRESHOLD_MM = 50; // Gap threshold for detecting breaks
+    const int RANSAC_TOLERANCE_MM = 25; // Distance tolerance for line inliers
+    const int RANSAC_MAX_ITERATIONS = 30; // Max RANSAC iterations per segment
+    const int MAX_SEGMENTS_PER_COLUMN = 8; // Max possible segments in a column
+
+    static int nextSegmentId = 1; // Global segment ID counter
+
+    // Initialize all points as unassigned
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 24; col++) {
+            pointcloud[row][col].segment = 0;
+        }
+    }
+
+    // Process each column independently
+    for (int col = 0; col < 24; col++) {
+        // Extract single column into temporary array
+        Point columnPoints[8];
+        for (int row = 0; row < 8; row++) {
+            columnPoints[row] = pointcloud[row][col];
+        }
+
+        // Detect segments within this column
+        SegmentInfo segments[MAX_SEGMENTS_PER_COLUMN];
+        int segmentCount = detectColumnSegments(columnPoints, 8, DISCONTINUITY_THRESHOLD_MM,
+            segments, MAX_SEGMENTS_PER_COLUMN);
+
+        // Fit line to each segment
+        for (int segIdx = 0; segIdx < segmentCount; segIdx++) {
+            SegmentInfo seg = segments[segIdx];
+
+            // Collect points for this segment
+            Point segmentPoints[8];
+            int pointIdx = 0;
+            for (int i = seg.startIdx; i <= seg.endIdx; i++) {
+                if (columnPoints[i].valid) {
+                    segmentPoints[pointIdx] = columnPoints[i];
+                    pointIdx++;
+                }
+            }
+
+            // Fit line via RANSAC
+            int inlierCount = 0;
+            Line bestLine = bestFitLine3D(segmentPoints, pointIdx, RANSAC_TOLERANCE_MM,
+                RANSAC_MAX_ITERATIONS, inlierCount);
+
+            // Assign segment IDs to points that are inliers to the best-fit line
+            int currentSegmentId = nextSegmentId++;
+            for (int i = seg.startIdx; i <= seg.endIdx; i++) {
+                if (columnPoints[i].valid) {
+                    float dist = pointToLineDistance(columnPoints[i], bestLine);
+                    if (dist <= RANSAC_TOLERANCE_MM) {
+                        // This point is an inlier - assign to segment
+                        pointcloud[i][col].segment = currentSegmentId;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void ALGORITHM_2()
