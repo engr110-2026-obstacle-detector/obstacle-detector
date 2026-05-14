@@ -26,10 +26,11 @@
 
 #include <Wifi.h>
 
-// #define ALGORITHM 1
+// #define ALGORITHM 1 // tried basic thresholds, subtraction from ground zero, and convolution-based
 // #define ALGORITHM 2 // plane finding, region growing segmentation https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html, ai generated, just freezes
 // #define ALGORITHM 3 // tried to fit line segments to each column, sets all point segmentIDs to 0, ai generated
-#define ALGORITHM 4 // performance optimized line fitting, handmade
+// #define ALGORITHM 4 // performance optimized line fitting, handmade, kind of worked but still not that solid of a signal
+#define ALGORITHM 5 // calculating gradient from 3d points
 
 // https://github.com/lorenwel/linefit_ground_segmentation
 
@@ -131,6 +132,7 @@ void sensorToPointCloud(DistanceData* distanceData, Point* pointCloud, int dista
                 float ycoord = (x - sensorNumCols / 2) * xcoord / focal_length_x;
                 float zcoord = (y - frontSensorDataHeight / 2) * xcoord / focal_length_y;
 
+                // rotate (yaw) aroound z axis by sensorYaw since there are 3 sensors with different yaws
                 pointCloud[arrayIndex].x = xcoord * cyaw - ycoord * syaw;
                 pointCloud[arrayIndex].y = ycoord * cyaw + xcoord * syaw;
                 pointCloud[arrayIndex].z = zcoord;
@@ -240,6 +242,7 @@ void ALGORITHM_1();
 void ALGORITHM_2();
 void ALGORITHM_3();
 void ALGORITHM_4();
+void ALGORITHM_5();
 
 /**
  * @brief
@@ -398,13 +401,11 @@ void loop()
 
 #if ALGORITHM == 4
         ALGORITHM_4();
-#endif
-
-        Serial.print("DiSp,X,");
+        Serial.print("DiSp,I,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
                 if (pointcloud[row][col].valid) {
-                    Serial.print(pointcloud[row][col].x);
+                    Serial.print(pointcloud[row][col].segment);
 
                     Serial.print(",");
                 }
@@ -412,11 +413,32 @@ void loop()
         }
         Serial.println();
         delay(50);
-        Serial.print("DiSp,I,");
+#endif
+
+#if ALGORITHM == 5
+        ALGORITHM_5();
+        Serial.print("DiSp,B,");
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                if (pointcloud[row][col].segment != INT16_MIN) {
+                    Serial.print(pointcloud[row][col].segment);
+
+                    Serial.print(",");
+                } else {
+                    Serial.print("nan,");
+                }
+            }
+        }
+        Serial.println();
+        delay(50);
+
+#endif
+
+        Serial.print("DiSp,X,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
             for (int col = 0; col < frontSensorDataWidth; col++) {
                 if (pointcloud[row][col].valid) {
-                    Serial.print(pointcloud[row][col].segment);
+                    Serial.print(pointcloud[row][col].x);
 
                     Serial.print(",");
                 }
@@ -480,6 +502,26 @@ void loop()
     //     Serial.println();
     //     Serial.println();
     // }
+}
+
+void ALGORITHM_5()
+{
+    // calculate xz gradient of points
+    for (int row = 0; row < frontSensorDataHeight - 1; row++) {
+        for (int col = 0; col < frontSensorDataWidth; col++) {
+            if (pointcloud[row][col].valid && pointcloud[row + 1][col].valid) {
+                float dz = pointcloud[row + 1][col].z - pointcloud[row][col].z;
+                float dx = pointcloud[row + 1][col].x - pointcloud[row][col].x;
+                float gradient = atan2(dz, dx) * 180 / PI; // in degrees
+                pointcloud[row][col].segment = (int16_t)(gradient); // store gradient*1024 in segment field for now
+            } else {
+                pointcloud[row][col].segment = INT16_MIN; // invalid gradient
+            }
+        }
+    }
+    for (int col = 0; col < frontSensorDataWidth; col++) {
+        pointcloud[frontSensorDataHeight - 1][col].segment = INT16_MIN; // invalid gradient
+    }
 }
 
 int32_t fastClosestLineDistance(Point pstart, Point pend, Point ptest, byte divisionPow2 = 4)
