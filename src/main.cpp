@@ -513,14 +513,98 @@ void ALGORITHM_5()
                 float dz = pointcloud[row + 1][col].z - pointcloud[row][col].z;
                 float dx = pointcloud[row + 1][col].x - pointcloud[row][col].x;
                 float gradient = atan2(dz, dx) * 180 / PI; // in degrees
+                gradient += 180 + 45;
+                if (gradient > 180) {
+                    gradient -= 360;
+                }
                 pointcloud[row][col].segment = (int16_t)(gradient); // store gradient*1024 in segment field for now
             } else {
                 pointcloud[row][col].segment = INT16_MIN; // invalid gradient
             }
         }
     }
-    for (int col = 0; col < frontSensorDataWidth; col++) {
+    for (int col = 0; col < frontSensorDataWidth; col++) { // bottom row (invalid, since 7 rows of gradients can be calculated from 8 points)
         pointcloud[frontSensorDataHeight - 1][col].segment = INT16_MIN; // invalid gradient
+    }
+
+    const int LEFT = 0;
+    const int CENTER = 1;
+    const int RIGHT = 2;
+    const int DROP = 0;
+    const int OBJECT = 1;
+
+    int detectionCounts[2][3] = { 0 }; // [object/drop][left/center/right]
+    int32_t objectThreshold = -32;
+    int32_t dropThreshold = 14;
+
+    for (int row = 0; row < frontSensorDataHeight - 1; row++) {
+        for (int col = 0; col < frontSensorDataWidth; col++) {
+            if (pointcloud[row][col].valid) {
+                int sensorIndex = col / 8;
+                int posIndex;
+                if (sensorIndex == 0) {
+                    posIndex = LEFT;
+                } else if (sensorIndex == 1) {
+                    posIndex = CENTER;
+                } else {
+                    posIndex = RIGHT;
+                }
+                if (pointcloud[row][col].segment <= objectThreshold) {
+                    detectionCounts[OBJECT][posIndex]++;
+                } else if (pointcloud[row][col].segment >= dropThreshold) {
+                    detectionCounts[DROP][posIndex]++;
+                }
+            }
+        }
+    }
+
+    static bool alertedYet[2][3] = { false }; // [object/drop][left/center/right]
+    const int dropPixelDetectionThreshold = 4; // alert if above this
+    const int objectPixelDetectionThreshold = 8;
+    const int dropPixelDetectionThreshold_Low = 3; // reset if below this
+    const int objectPixelDetectionThreshold_Low = 4;
+
+    const int center_dropPixelDetectionThreshold = 3; // alert if above this
+    const int center_objectPixelDetectionThreshold = 4;
+    const int center_dropPixelDetectionThreshold_Low = 1; // reset if below this
+    const int center_objectPixelDetectionThreshold_Low = 1;
+
+    const int alertTracks[2][3] = {
+        { TRACK_DROP_LEFT, TRACK_DROP_FRONT, TRACK_DROP_RIGHT },
+        { TRACK_OBJECT_LEFT, TRACK_OBJECT_FRONT, TRACK_OBJECT_RIGHT },
+    };
+
+    for (int type = 0; type < 2; type++) {
+        for (int pos = 0; pos < 3; pos+=2) {
+            if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? objectPixelDetectionThreshold : dropPixelDetectionThreshold)) {
+                alertedYet[type][pos] = true;
+                if (!audioBoard.isPlaying()) {
+                    if (type == OBJECT && pos == RIGHT) { // Corey Case: mute alerts for objects on the right since Corey should be there.
+                    } else {
+                        audioBoard.playTrack(alertTracks[type][pos]);
+                    }
+                }
+            } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? objectPixelDetectionThreshold_Low : dropPixelDetectionThreshold_Low)) {
+                alertedYet[type][pos] = false;
+                audioBoard.stop();
+            }
+        }
+    }
+        for (int type = 0; type < 2; type++) {
+        for (int pos = 1; pos ==2; pos+=2) {
+            if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? center_objectPixelDetectionThreshold : center_dropPixelDetectionThreshold)) {
+                alertedYet[type][pos] = true;
+                if (!audioBoard.isPlaying()) {
+                    if (type == OBJECT && pos == RIGHT) { // Corey Case: mute alerts for objects on the right since Corey should be there.
+                    } else {
+                        audioBoard.playTrack(alertTracks[type][pos]);
+                    }
+                }
+            } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? center_objectPixelDetectionThreshold_Low : center_dropPixelDetectionThreshold_Low)) {
+                alertedYet[type][pos] = false;
+                audioBoard.stop();
+            }
+        }
     }
 }
 
