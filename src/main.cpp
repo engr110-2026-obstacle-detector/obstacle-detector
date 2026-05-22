@@ -30,7 +30,8 @@
 // #define ALGORITHM 2 // plane finding, region growing segmentation https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html, ai generated, just freezes
 // #define ALGORITHM 3 // tried to fit line segments to each column, sets all point segmentIDs to 0, ai generated
 // #define ALGORITHM 4 // performance optimized line fitting, handmade, kind of worked but still not that solid of a signal
-#define ALGORITHM 5 // calculating gradient from 3d points
+// #define ALGORITHM 5 // calculating gradient from 3d points
+#define ALGORITHM 6 // calculating gradient from 3d points from rolling averaging 4 distance measurements
 
 // https://github.com/lorenwel/linefit_ground_segmentation
 
@@ -387,9 +388,45 @@ void loop()
         }
         Serial.println();
 
+#if ALGORITHM == 6
+        // save data to history
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                distanceDataHistory[frontSensorDataIndex][row][col].distanceMm = distanceData[row][col].distanceMm;
+                distanceDataHistory[frontSensorDataIndex][row][col].isValid = distanceData[row][col].isValid;
+            }
+        }
+        // calculate average
+        frontSensorDataIndex = (frontSensorDataIndex + 1) % numToAverage;
+        DistanceData distanceDataAvg[frontSensorDataHeight][frontSensorDataWidth];
+        for (int row = 0; row < frontSensorDataHeight; row++) {
+            for (int col = 0; col < frontSensorDataWidth; col++) {
+                int validCount = 0;
+                int32_t distanceSum = 0;
+                for (int i = 0; i < numToAverage; i++) {
+                    if (distanceDataHistory[i][row][col].isValid) {
+                        validCount++;
+                        distanceSum += distanceDataHistory[i][row][col].distanceMm;
+                    }
+                }
+                if (validCount == numToAverage) { // only consider it valid if all measurements are valid
+                    distanceDataAvg[row][col].isValid = true;
+                    distanceDataAvg[row][col].distanceMm = distanceSum / validCount;
+                } else {
+                    distanceDataAvg[row][col].isValid = false;
+                }
+            }
+        }
+
+        sensorToPointCloud((DistanceData*)distanceDataAvg, (Point*)pointcloud, 8, 8, 8.45, 8.45, 0);
+        sensorToPointCloud((DistanceData*)distanceDataAvg, (Point*)pointcloud, 0, 8, 8.45, 8.45, -45);
+        sensorToPointCloud((DistanceData*)distanceDataAvg, (Point*)pointcloud, 16, 8, 8.45, 8.45, 45);
+#else
         sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 8, 8, 8.45, 8.45, 0);
         sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 0, 8, 8.45, 8.45, -45);
         sensorToPointCloud((DistanceData*)distanceData, (Point*)pointcloud, 16, 8, 8.45, 8.45, 45);
+
+#endif
 
 #if ALGORITHM == 2
         ALGORITHM_2();
@@ -415,7 +452,7 @@ void loop()
         delay(50);
 #endif
 
-#if ALGORITHM == 5
+#if ALGORITHM == 5 || ALGORITHM == 6
         ALGORITHM_5();
         Serial.print("DiSp,B,");
         for (int row = 0; row < frontSensorDataHeight; row++) {
@@ -430,7 +467,7 @@ void loop()
             }
         }
         Serial.println();
-        delay(50);
+        delay(20);
 
 #endif
 
@@ -507,11 +544,11 @@ void loop()
 void ALGORITHM_5()
 {
     // calculate xz gradient of points
-    for (int row = 0; row < frontSensorDataHeight - 1; row++) {
+    for (int row = 0; row < frontSensorDataHeight - 2; row++) {
         for (int col = 0; col < frontSensorDataWidth; col++) {
-            if (pointcloud[row][col].valid && pointcloud[row + 1][col].valid) {
-                float dz = pointcloud[row + 1][col].z - pointcloud[row][col].z;
-                float dx = pointcloud[row + 1][col].x - pointcloud[row][col].x;
+            if (pointcloud[row][col].valid && pointcloud[row + 2][col].valid) {
+                float dz = pointcloud[row + 2][col].z - pointcloud[row][col].z;
+                float dx = pointcloud[row + 2][col].x - pointcloud[row][col].x;
                 float gradient = atan2(dz, dx) * 180 / PI; // in degrees
                 gradient += 180 + 45;
                 if (gradient > 180) {
@@ -526,6 +563,33 @@ void ALGORITHM_5()
     for (int col = 0; col < frontSensorDataWidth; col++) { // bottom row (invalid, since 7 rows of gradients can be calculated from 8 points)
         pointcloud[frontSensorDataHeight - 1][col].segment = INT16_MIN; // invalid gradient
     }
+    for (int col = 0; col < frontSensorDataWidth; col++) { // bottom row (invalid, since 7 rows of gradients can be calculated from 8 points)
+        pointcloud[frontSensorDataHeight - 2][col].segment = INT16_MIN; // invalid gradient
+    }
+
+    // calculate average segment value across all valid elements from ro 0 to row height-2
+    int64_t segmentSum = 0;
+    int validCount = 0;
+    for (int row = 0; row < frontSensorDataHeight - 2; row++) {
+        for (int col = 0; col < frontSensorDataWidth; col++) {
+            if (pointcloud[row][col].segment != INT16_MIN) {
+                segmentSum += pointcloud[row][col].segment;
+                validCount++;
+            }
+        }
+    }
+
+    int16_t averageSegment = validCount > 0 ? segmentSum / validCount : 0;
+
+    // for (int row = 0; row < frontSensorDataHeight - 2; row++) {
+    //     for (int col = 0; col < frontSensorDataWidth; col++) {
+    //         if (pointcloud[row][col].segment != INT16_MIN) {
+    //             pointcloud[row][col].segment -= averageSegment;
+    //         }
+    //     }
+    // }
+
+    pointcloud[frontSensorDataHeight - 1][0].segment = averageSegment;
 
     const int LEFT = 0;
     const int CENTER = 1;
@@ -534,12 +598,12 @@ void ALGORITHM_5()
     const int OBJECT = 1;
 
     int detectionCounts[2][3] = { 0 }; // [object/drop][left/center/right]
-    int32_t objectThreshold = -32;
-    int32_t dropThreshold = 14;
+    int32_t objectThreshold = -26;
+    int32_t dropThreshold = -2;
 
     for (int row = 0; row < frontSensorDataHeight - 1; row++) {
         for (int col = 0; col < frontSensorDataWidth; col++) {
-            if (pointcloud[row][col].valid) {
+            if (pointcloud[row][col].valid && pointcloud[row][col].segment != INT16_MIN) {
                 int sensorIndex = col / 8;
                 int posIndex;
                 if (sensorIndex == 0) {
@@ -558,10 +622,17 @@ void ALGORITHM_5()
         }
     }
 
+    pointcloud[frontSensorDataHeight - 2][10].segment = detectionCounts[1][0];
+    pointcloud[frontSensorDataHeight - 2][11].segment = detectionCounts[1][1];
+    pointcloud[frontSensorDataHeight - 2][12].segment = detectionCounts[1][2];
+    pointcloud[frontSensorDataHeight - 1][10].segment = detectionCounts[0][0];
+    pointcloud[frontSensorDataHeight - 1][11].segment = detectionCounts[0][1];
+    pointcloud[frontSensorDataHeight - 1][12].segment = detectionCounts[0][2];
+
     static bool alertedYet[2][3] = { false }; // [object/drop][left/center/right]
     const int dropPixelDetectionThreshold = 4; // alert if above this
     const int objectPixelDetectionThreshold = 8;
-    const int dropPixelDetectionThreshold_Low = 3; // reset if below this
+    const int dropPixelDetectionThreshold_Low = 2; // reset if below this
     const int objectPixelDetectionThreshold_Low = 4;
 
     const int center_dropPixelDetectionThreshold = 3; // alert if above this
@@ -575,7 +646,7 @@ void ALGORITHM_5()
     };
 
     for (int type = 0; type < 2; type++) {
-        for (int pos = 0; pos < 3; pos+=2) {
+        for (int pos = 0; pos < 3; pos += 2) { // 0,1
             if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? objectPixelDetectionThreshold : dropPixelDetectionThreshold)) {
                 alertedYet[type][pos] = true;
                 if (!audioBoard.isPlaying()) {
@@ -586,24 +657,23 @@ void ALGORITHM_5()
                 }
             } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? objectPixelDetectionThreshold_Low : dropPixelDetectionThreshold_Low)) {
                 alertedYet[type][pos] = false;
-                audioBoard.stop();
+                // audioBoard.stop();
             }
         }
     }
-        for (int type = 0; type < 2; type++) {
-        for (int pos = 1; pos ==2; pos+=2) {
-            if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? center_objectPixelDetectionThreshold : center_dropPixelDetectionThreshold)) {
-                alertedYet[type][pos] = true;
-                if (!audioBoard.isPlaying()) {
-                    if (type == OBJECT && pos == RIGHT) { // Corey Case: mute alerts for objects on the right since Corey should be there.
-                    } else {
-                        audioBoard.playTrack(alertTracks[type][pos]);
-                    }
+    for (int type = 0; type < 2; type++) {
+        int pos = 1;
+        if (!alertedYet[type][pos] && detectionCounts[type][pos] >= (type == OBJECT ? center_objectPixelDetectionThreshold : center_dropPixelDetectionThreshold)) {
+            alertedYet[type][pos] = true;
+            if (!audioBoard.isPlaying()) {
+                if (type == OBJECT && pos == RIGHT) { // Corey Case: mute alerts for objects on the right since Corey should be there.
+                } else {
+                    audioBoard.playTrack(alertTracks[type][pos]);
                 }
-            } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? center_objectPixelDetectionThreshold_Low : center_dropPixelDetectionThreshold_Low)) {
-                alertedYet[type][pos] = false;
-                audioBoard.stop();
             }
+        } else if (alertedYet[type][pos] && detectionCounts[type][pos] < (type == OBJECT ? center_objectPixelDetectionThreshold_Low : center_dropPixelDetectionThreshold_Low)) {
+            alertedYet[type][pos] = false;
+            // audioBoard.stop();
         }
     }
 }

@@ -44,12 +44,7 @@ public:
         pinMode(_powerButtonPin, INPUT);
 
         delay(500); // give power time to stabilize before measuring it
-        if (digitalRead(_chargeDetectPin) == HIGH) {
-            Serial.println("Charging detected on startup, powering off to charge...");
-            _audioBoard.playTrack(TRACK_CHARGING);
-            delay(TRACK_CHARGING_TIME);
-            powerOff();
-        }
+        checkCharging();
         checkLowBattery();
     }
 
@@ -87,12 +82,13 @@ public:
 protected:
     void checkCharging()
     {
-        if (digitalRead(_chargeDetectPin) == HIGH) {
-            Serial.println("Charging detected while running, powering off to charge...");
-            _audioBoard.playTrack(TRACK_CHARGING);
-            delay(TRACK_CHARGING_TIME);
-            powerOff();
-        }
+        // TODO: REACTIVATE THIS CHECK
+        // if (digitalRead(_chargeDetectPin) == HIGH) {
+        //     Serial.println("Charging detected while running, powering off to charge...");
+        //     _audioBoard.playTrack(TRACK_CHARGING);
+        //     delay(TRACK_CHARGING_TIME);
+        //     powerOff();
+        // }
     }
     void checkLowBattery()
     {
